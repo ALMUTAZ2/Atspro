@@ -37,19 +37,17 @@ export class GeminiService {
     const ai = this.getClient();
     const systemInstruction = `
       ROLE: High-Fidelity Professional Resume Parser.
-      STRICT RULE: 
-      1. DO NOT DELETE ANY TEXT. Capture 100% of the input text provided.
-      2. Identify standard sections (Experience, Skills, etc.).
-      3. If any text does not fit a standard section, create a section titled "General Information" or "Miscellaneous" to hold it.
-      4. Preserve all numbers, dates, and names exactly.
-      5. Format descriptions as HTML lists (<ul><li>).
-      6. Output MUST follow the JSON schema.
+      STRICT MANDATE: 
+      1. YOU MUST EXTRACT 100% OF THE INPUT TEXT. DO NOT SUMMARIZE OR OMIT ANYTHING.
+      2. If text doesn't fit a standard section, put it in a section called "Additional Data".
+      3. Use <ul><li> HTML tags for all list items.
+      4. Ensure names, dates, and numbers are preserved with absolute accuracy.
     `;
 
     try {
       const response: GenerateContentResponse = await ai.models.generateContent({
         model: 'gemini-2.0-flash-lite',
-        contents: [{ role: 'user', parts: [{ text: `${systemInstruction}\n\nFULL RESUME TEXT:\n${text}` }] }],
+        contents: [{ role: 'user', parts: [{ text: `${systemInstruction}\n\nRESUME CONTENT TO PARSE:\n${text}` }] }],
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -115,23 +113,25 @@ export class GeminiService {
       return sanitized;
     } catch (error) {
       console.error("Gemini Analysis Error:", error);
-      throw new Error("فشل في تحليل السيرة الذاتية. يرجى التأكد من أن الملف يحتوي على نص.");
+      throw new Error("حدث خطأ في قراءة الملف. تأكد من أن النص واضح.");
     }
   }
 
   async bulkImproveATS(sections: ResumeSection[]): Promise<Record<string, string>> {
     const ai = this.getClient();
     const prompt = `
-      TASK: Bulk ATS Optimization. 
-      For each provided section, rewrite its content to use stronger action verbs and metrics. 
-      IMPORTANT: Keep the same meaning and facts, but make it more impactful for ATS.
-      Return the results as an array of objects matching the schema.
+      TASK: REWRITE EVERY SECTION FOR ATS SUCCESS.
+      RULES:
+      1. Keep all facts, names, and dates.
+      2. Use strong action verbs (Led, Developed, Optimized).
+      3. Use clean HTML <ul><li> formatting.
+      4. DO NOT DELETE ANY INFORMATION.
     `;
 
     try {
       const response = await ai.models.generateContent({
         model: 'gemini-2.0-flash-lite',
-        contents: [{ role: 'user', parts: [{ text: `${prompt}\n\nSections: ${JSON.stringify(sections.map(s => ({ id: s.id, content: s.content })))}` }] }],
+        contents: [{ role: 'user', parts: [{ text: `${prompt}\n\nSections JSON: ${JSON.stringify(sections.map(s => ({ id: s.id, content: s.content })))}` }] }],
         config: { 
           responseMimeType: "application/json",
           responseSchema: {
@@ -156,13 +156,13 @@ export class GeminiService {
       return mapping;
     } catch (error) {
       console.error("Bulk Improvement Error:", error);
-      throw new Error("فشل في معالجة طلب التحسين الشامل.");
+      throw new Error("فشل التحسين التلقائي. يرجى المحاولة لاحقاً.");
     }
   }
 
   async improveSection(title: string, content: string): Promise<ImprovedContent> {
     const ai = this.getClient();
-    const prompt = `Optimize the "${title}" section for ATS. Return JSON with 'professional' and 'atsOptimized' versions. Original: ${content}`;
+    const prompt = `Improve "${title}" for ATS. Return JSON with 'professional' and 'atsOptimized'. Content: ${content}`;
 
     try {
       const response = await ai.models.generateContent({
@@ -189,7 +189,7 @@ export class GeminiService {
 
   async matchJobDescription(resumeText: string, sections: ResumeSection[], jobDescription: string): Promise<JobMatchResult> {
     const ai = this.getClient();
-    const prompt = `Match resume to JD. Resume: ${resumeText}\n\nJD: ${jobDescription}`;
+    const prompt = `Tailor resume to JD. Resume: ${resumeText}\n\nJD: ${jobDescription}`;
 
     try {
       const response = await ai.models.generateContent({

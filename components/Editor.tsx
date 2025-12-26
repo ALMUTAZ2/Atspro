@@ -66,7 +66,10 @@ export const Editor: React.FC<EditorProps> = ({ sections, onBack }) => {
   const [currentSections, setCurrentSections] = useState<ResumeSection[]>(sections);
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
   const [globalLoading, setGlobalLoading] = useState(false);
-  const [optimizeCount, setOptimizeCount] = useState(0);
+  const [optimizeCount, setOptimizeCount] = useState(() => {
+    const saved = localStorage.getItem('optimize_count');
+    return saved ? parseInt(saved) : 0;
+  });
   const [activeSuggestions, setActiveSuggestions] = useState<Record<string, ImprovedContent | null>>({});
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [peekingIds, setPeekingIds] = useState<Set<string>>(new Set());
@@ -74,6 +77,10 @@ export const Editor: React.FC<EditorProps> = ({ sections, onBack }) => {
   useEffect(() => {
     setCurrentSections(sections);
   }, [sections]);
+
+  useEffect(() => {
+    localStorage.setItem('optimize_count', optimizeCount.toString());
+  }, [optimizeCount]);
 
   const handleUpdate = useCallback((id: string, newContent: string) => {
     setCurrentSections(prev => prev.map(s => s.id === id ? { ...s, content: newContent } : s));
@@ -83,26 +90,25 @@ export const Editor: React.FC<EditorProps> = ({ sections, onBack }) => {
     if (globalLoading) return;
 
     if (optimizeCount >= 2) {
-      alert("⚠️ انتهت محاولات التحسين الشامل. يمكنك تعديل كل قسم على حدة.");
+      alert("⚠️ لقد استهلكت جميع محاولات التحسين الشامل لهذا الملف.");
       return;
     }
 
-    if (window.confirm(`هل أنت متأكد من رغبتك في تحسين كافة الأقسام الآن؟ (متبقي لك ${2 - optimizeCount} محاولة)`)) {
+    if (window.confirm(`جاري الآن تحويل كافة الأقسام إلى صيغة احترافية تتوافق مع الـ ATS. هل ترغب في البدء؟ (متبقي لك: ${2 - optimizeCount})`)) {
       setGlobalLoading(true);
       try {
         const gemini = new GeminiService();
         const bulkResults = await gemini.bulkImproveATS(currentSections);
         
-        const newSections = currentSections.map(section => ({
+        setCurrentSections(prev => prev.map(section => ({
           ...section,
           content: bulkResults[section.id] || section.content
-        }));
+        })));
         
-        setCurrentSections(newSections);
         setOptimizeCount(prev => prev + 1);
-        alert("✅ تمت معالجة السيرة الذاتية بالكامل وتحسينها وفقاً لمعايير ATS.");
+        alert("✅ تم تحسين كامل السيرة الذاتية بنجاح!");
       } catch (err: any) {
-        alert(err.message || "حدث خطأ غير متوقع أثناء المعالجة الشاملة.");
+        alert("حدث خطأ أثناء الاتصال بالخادم. يرجى المحاولة مرة أخرى.");
       } finally {
         setGlobalLoading(false);
       }
@@ -117,7 +123,7 @@ export const Editor: React.FC<EditorProps> = ({ sections, onBack }) => {
       const result = await gemini.improveSection(section.title, section.content);
       setActiveSuggestions(prev => ({ ...prev, [section.id]: result }));
     } catch (err) {
-      alert('فشل الاتصال بمحرك الذكاء الاصطناعي.');
+      alert('فشل الاتصال بالذكاء الاصطناعي.');
     } finally {
       setLoadingStates(prev => ({ ...prev, [section.id]: false }));
     }
@@ -148,7 +154,7 @@ export const Editor: React.FC<EditorProps> = ({ sections, onBack }) => {
         <div className="flex items-center gap-3">
           <div className="relative">
             <button onClick={() => setShowExportMenu(!showExportMenu)} className="px-8 py-3.5 bg-slate-900 text-white rounded-2xl font-black hover:bg-indigo-600 shadow-xl transition-all flex items-center gap-3 active:scale-95">
-              <Download size={20} /> خيارات التصدير
+              <Download size={20} /> تصدير النتائج
             </button>
             {showExportMenu && (
               <div className="absolute right-0 mt-3 w-64 bg-white rounded-3xl shadow-2xl border p-2 z-50 animate-in fade-in zoom-in-95">
@@ -174,7 +180,7 @@ export const Editor: React.FC<EditorProps> = ({ sections, onBack }) => {
           </div>
           <div>
             <h3 className="text-2xl font-black uppercase tracking-tight">ATS Smart Refine</h3>
-            <p className="text-slate-400 text-sm font-medium">تحسين شامل لكافة الأقسام لضمان أعلى نسبة قبول آلي.</p>
+            <p className="text-slate-400 text-sm font-medium">تحويل شامل لكافة الأقسام لضمان أعلى نسبة قبول آلي.</p>
             <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 bg-white/5 rounded-full text-[10px] font-black uppercase tracking-widest text-indigo-300">
               <AlertTriangle size={12} className="text-amber-400" /> متبقي لك: {2 - optimizeCount} استخدام
             </div>
@@ -187,7 +193,7 @@ export const Editor: React.FC<EditorProps> = ({ sections, onBack }) => {
             className={`px-10 py-5 rounded-2xl font-black text-lg transition-all shadow-2xl flex items-center gap-3 active:scale-95 ${optimizeCount >= 2 ? 'bg-slate-700 text-slate-400 cursor-not-allowed shadow-none' : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-indigo-600/40'}`}
           >
             {globalLoading ? <Loader2 size={24} className="animate-spin" /> : <Zap size={24} className="fill-current" />} 
-            {optimizeCount >= 2 ? 'Limit Reached' : 'ATS Optimize All'}
+            {optimizeCount >= 2 ? 'انتهت المحاولات' : 'ATS Optimize All'}
           </button>
         </div>
       </div>

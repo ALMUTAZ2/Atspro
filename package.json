@@ -9,8 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@google/genai": "^0.21.0",
-    "pdfjs-dist": "^4.0.379",
+    "@google/genai": "latest",
+    "pdfjs-dist": "4.0.379",
     "docx": "^9.5.1",
     "file-saver": "^2.0.5",
     "jspdf": "^2.5.1",

@@ -10,8 +10,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        body { font-family: 'Inter', sans-serif; }
-        #root:empty { background: white; }
+        body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; }
+        #root { min-height: 100vh; }
     </style>
 <script type="importmap">
 {
@@ -27,15 +27,15 @@
     "jspdf": "https://esm.sh/jspdf@^2.5.1",
     "pdfjs-dist": "https://esm.sh/pdfjs-dist@^5.4.449",
     "path": "https://esm.sh/path@^0.12.7",
-    "vite": "https://esm.sh/vite@^7.3.0",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
+    "vite": "https://esm.sh/vite@^6.0.5",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^4.3.4"
   }
 }
 </script>
 </head>
 <body class="bg-slate-50 text-slate-900">
     <div id="root"></div>
-    <!-- الربط بملف التشغيل الرئيسي -->
-    <script type="module" src="./index.tsx"></script>
+    <!-- استخدام مسار مطلق لضمان التحميل في Vercel -->
+    <script type="module" src="/index.tsx"></script>
 </body>
 </html>

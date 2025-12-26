@@ -3,18 +3,15 @@ import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { AnalysisResult, JobMatchResult, ResumeSection, ImprovedContent } from "../types";
 
 export class GeminiService {
-  private getApiKey(): string {
-    // محاولة جلب المفتاح من عدة مصادر محتملة في Vercel
-    const key = process.env.API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY;
-    if (!key) {
-      console.error("API Key is missing in environment variables.");
-      throw new Error("API Key is missing. Please check your configuration.");
-    }
-    return key;
-  }
-
   private getClient() {
-    const apiKey = this.getApiKey();
+    // Vite config should have defined process.env.API_KEY
+    const apiKey = (process.env as any).API_KEY;
+    
+    if (!apiKey) {
+      console.error("CRITICAL: API_KEY is missing. Ensure it is set in Vercel Environment Variables.");
+      throw new Error("مفتاح تشغيل الذكاء الاصطناعي مفقود. يرجى مراجعة إعدادات الخادم.");
+    }
+    
     return new GoogleGenAI({ apiKey });
   }
 
@@ -96,7 +93,10 @@ export class GeminiService {
         }
       });
 
-      const data = JSON.parse(response.text || "{}");
+      const textOutput = response.text;
+      if (!textOutput) throw new Error("Empty response from AI");
+      
+      const data = JSON.parse(textOutput);
       
       const sanitized: AnalysisResult = {
         detectedRole: data.detectedRole || "Unknown Professional",
@@ -119,9 +119,9 @@ export class GeminiService {
 
       sanitized.overallScore = this.calculateATSScore(sanitized);
       return sanitized;
-    } catch (error) {
-      console.error("Gemini Analysis Error:", error);
-      throw new Error("حدث خطأ في قراءة الملف. تأكد من أن النص واضح.");
+    } catch (error: any) {
+      console.error("Gemini Analysis Error Detail:", error);
+      throw new Error(`تعذر تحليل السيرة الذاتية: ${error.message || "خطأ غير معروف"}`);
     }
   }
 

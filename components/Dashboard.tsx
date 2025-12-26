@@ -15,16 +15,18 @@ import {
   Info,
   ShieldCheck,
   TrendingUp,
-  Award
+  Award,
+  FilePlus2
 } from 'lucide-react';
 
 interface DashboardProps {
   result: AnalysisResult;
   onEdit: () => void;
   onOpenMatch: () => void;
+  onNewScan: () => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ result, onEdit, onOpenMatch }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ result, onEdit, onOpenMatch, onNewScan }) => {
   const metricRatio = result.metrics.totalBulletPoints > 0 
     ? (result.metrics.bulletsWithMetrics / result.metrics.totalBulletPoints) * 100 
     : 0;
@@ -42,31 +44,39 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onEdit, onOpenMatc
           <ScoreGauge score={score} label="ATS Compliance Index" size={180} />
           <div className="mt-6 text-center z-10">
             <div className="flex items-center gap-1 justify-center text-[10px] text-indigo-400 font-black uppercase tracking-[0.2em] mb-1">
-              <ShieldCheck size={12} /> Forensic V4.4 Balanced
+              <ShieldCheck size={12} /> Forensic V4.5 Balanced
             </div>
             <div className={`text-sm font-bold ${isCritical ? 'text-rose-400' : isExcellent ? 'text-emerald-400' : 'text-amber-400'}`}>
-              {isCritical ? 'NEEDS CRITICAL OPTIMIZATION' : isExcellent ? 'JOB-READY EXCELLENCE' : 'COMPETITIVE SCORE'}
+              {isCritical ? 'فحص دقيق: يحتاج تحسين' : isExcellent ? 'جاهزية تامة للتوظيف' : 'نتيجة تنافسية'}
             </div>
           </div>
         </div>
         
         <div className="md:col-span-3 bg-white p-10 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col justify-between">
           <div>
-            <div className="flex items-center gap-2 text-indigo-600 font-black text-xs uppercase tracking-widest mb-6">
-              <Binary size={14} /> PROPHET V4.4 - BALANCED AUDIT LOGIC
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-2 text-indigo-600 font-black text-xs uppercase tracking-widest">
+                <Binary size={14} /> PROPHET V4.5 - BALANCED AUDIT LOGIC
+              </div>
+              <button 
+                onClick={onNewScan}
+                className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 text-slate-800 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-slate-900 hover:text-white transition-all border border-slate-200 shadow-sm active:scale-95 group"
+              >
+                <FilePlus2 size={16} className="group-hover:rotate-12 transition-transform" /> Scan New File
+              </button>
             </div>
             <h2 className="text-2xl font-black text-slate-800 leading-tight mb-4 italic">
               "{result.summaryFeedback}"
             </h2>
             <div className="flex flex-wrap gap-4 mt-8">
               <div className="bg-slate-50 px-6 py-4 rounded-2xl border border-slate-100">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Target Role</p>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">الدور الوظيفي المكتشف</p>
                 <p className="text-lg font-black text-slate-800 flex items-center gap-2">
                   <Target size={18} className="text-indigo-500" /> {result.detectedRole}
                 </p>
               </div>
               <div className="bg-indigo-50 px-6 py-4 rounded-2xl border border-indigo-100">
-                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Impact Density</p>
+                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">كثافة الإنجازات</p>
                 <p className="text-lg font-black text-slate-800 flex items-center gap-2">
                   <TrendingUp size={18} className="text-indigo-500" /> {Math.round(metricRatio)}%
                 </p>
@@ -79,13 +89,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onEdit, onOpenMatc
               onClick={onEdit}
               className="flex-1 py-4 bg-indigo-600 text-white rounded-[1.5rem] font-black hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 flex items-center justify-center gap-3 active:scale-[0.98]"
             >
-              <Edit3 size={18} /> Optimize Descriptions
+              <Edit3 size={18} /> تحسين محتوى الأقسام
             </button>
             <button 
               onClick={onOpenMatch}
               className="flex-1 py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-[1.5rem] font-black hover:border-indigo-600 hover:text-indigo-600 transition-all active:scale-[0.98]"
             >
-              Scan for Job Match
+              مطابقة مع وصف وظيفة
             </button>
           </div>
         </div>
@@ -103,28 +113,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onEdit, onOpenMatc
             <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
               <div className="h-full bg-indigo-500" style={{ width: '100%' }}></div>
             </div>
-            <p className="text-[10px] text-slate-400">تحصل على نقاط فورية عند وجود الأقسام الأساسية (الخبرة، التعليم).</p>
+            <p className="text-[10px] text-slate-400">تحصل على نقاط فورية عند وجود الأقسام الأساسية.</p>
           </div>
           <div className="space-y-2">
             <p className="text-xs font-black text-slate-500 uppercase">2. المهارات (30%)</p>
             <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
               <div className="h-full bg-indigo-500" style={{ width: '80%' }}></div>
             </div>
-            <p className="text-[10px] text-slate-400">نقاط تراكمية بناءً على عدد وتنوع المهارات التقنية المكتشفة.</p>
+            <p className="text-[10px] text-slate-400">نقاط تراكمية بناءً على تنوع الكلمات المفتاحية التقنية.</p>
           </div>
           <div className="space-y-2">
             <p className="text-xs font-black text-slate-500 uppercase">3. لغة الأرقام (30%)</p>
             <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
               <div className="h-full bg-indigo-500" style={{ width: '60%' }}></div>
             </div>
-            <p className="text-[10px] text-slate-400">أقوى معيار للقبول؛ تحصل على نقاط كاملة إذا كان 40% من وصفك مدعوم بأرقام.</p>
+            <p className="text-[10px] text-slate-400">أقوى معيار؛ هل وصفت إنجازاتك بأرقام ونسب مئوية؟</p>
           </div>
           <div className="space-y-2">
             <p className="text-xs font-black text-slate-500 uppercase">4. التنسيق الفني (15%)</p>
             <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
               <div className="h-full bg-indigo-500" style={{ width: '90%' }}></div>
             </div>
-            <p className="text-[10px] text-slate-400">درجة جودة الصياغة وقابلية القراءة الإلكترونية (خلو الملف من الجداول المعقدة).</p>
+            <p className="text-[10px] text-slate-400">درجة خلو الملف من الأخطاء التي تعيق القارئ الآلي.</p>
           </div>
         </div>
       </div>

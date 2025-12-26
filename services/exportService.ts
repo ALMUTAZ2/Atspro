@@ -9,6 +9,25 @@ export class ExportService {
     return (FileSaver as any).saveAs || (FileSaver as any).default?.saveAs || (FileSaver as any).default;
   }
 
+  // Helper to convert HTML to structure compatible with exporters
+  private static stripHtmlAndFormat(html: string): string {
+    const tmp = document.createElement("DIV");
+    tmp.innerHTML = html;
+    
+    // Replace <br> and <div> with newlines
+    const content = tmp.innerHTML
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/div>/gi, '\n')
+      .replace(/<div>/gi, '')
+      .replace(/<li>/gi, '• ')
+      .replace(/<\/li>/gi, '\n');
+      
+    // Create another element to get clean text
+    const cleanTmp = document.createElement("DIV");
+    cleanTmp.innerHTML = content;
+    return cleanTmp.textContent || cleanTmp.innerText || "";
+  }
+
   static async generateDocx(sections: ResumeSection[]) {
     const doc = new Document({
       sections: [
@@ -20,13 +39,13 @@ export class ExportService {
               heading: HeadingLevel.HEADING_2,
               spacing: { before: 240, after: 120 },
             }),
-            ...section.content.split('\n').map(line => 
-              new Paragraph({
+            ...this.stripHtmlAndFormat(section.content || "").split('\n').filter(line => line.trim()).map(line => {
+              return new Paragraph({
                 children: [new TextRun({ text: line, size: 22 })],
                 spacing: { after: 80 },
                 alignment: AlignmentType.JUSTIFY
-              })
-            ),
+              });
+            }),
           ]),
         },
       ],
@@ -42,7 +61,7 @@ export class ExportService {
     sections.forEach(section => {
       content += `${section.title.toUpperCase()}\n`;
       content += `${"=".repeat(section.title.length)}\n`;
-      content += `${section.content}\n\n`;
+      content += `${this.stripHtmlAndFormat(section.content || "")}\n\n`;
     });
 
     const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
@@ -58,59 +77,43 @@ export class ExportService {
     const maxLineWidth = pageWidth - margin * 2;
     const footerMargin = 15;
 
-    // Calculate total height needed to decide on balancing
-    let totalLines = 0;
-    sections.forEach(s => {
-      totalLines += 2; // Title + line
-      totalLines += doc.splitTextToSize(s.content, maxLineWidth).length;
-      totalLines += 1; // Spacing
-    });
-
-    // Heuristic for balancing: if total lines are slightly over one page, increase spacing
-    const estimatedHeight = totalLines * 5;
-    const isMultiPage = estimatedHeight > (pageHeight - margin * 2);
-    const lineSpacing = (isMultiPage && estimatedHeight < (pageHeight * 1.3)) ? 6 : 5;
-
     let yOffset = margin;
 
     sections.forEach((section) => {
-      const sectionLines = doc.splitTextToSize(section.content, maxLineWidth);
-      const sectionHeight = 10 + (sectionLines.length * lineSpacing);
+      const cleanText = this.stripHtmlAndFormat(section.content || "");
+      const sectionLines = doc.splitTextToSize(cleanText, maxLineWidth);
 
-      // Better page break logic: If a section is small, don't split it. 
-      // If it's big, split it but ensure at least 3 lines stay together.
-      if (yOffset + 15 > pageHeight - footerMargin) {
+      // Section Title Check
+      if (yOffset + 20 > pageHeight - footerMargin) {
         doc.addPage();
         yOffset = margin;
       }
 
-      // Section Title
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
+      doc.setFontSize(12);
       doc.setTextColor(30, 41, 59);
       doc.text(section.title.toUpperCase(), margin, yOffset);
       
-      yOffset += 1.5;
+      yOffset += 2;
       doc.setDrawColor(226, 232, 240);
       doc.line(margin, yOffset, pageWidth - margin, yOffset);
-      yOffset += 5;
+      yOffset += 6;
 
-      // Section Content
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(9.5);
+      doc.setFontSize(10);
       doc.setTextColor(51, 65, 85);
       
       sectionLines.forEach((line: string) => {
-        if (yOffset > pageHeight - footerMargin) {
+        if (yOffset + 7 > pageHeight - footerMargin) {
           doc.addPage();
           yOffset = margin;
-          // Re-draw title helper or just continue
         }
+
         doc.text(line, margin, yOffset);
-        yOffset += lineSpacing;
+        yOffset += 5.5;
       });
 
-      yOffset += 4; // Space between sections
+      yOffset += 6; // Space after section
     });
 
     doc.save("ATS_Optimized_Resume.pdf");

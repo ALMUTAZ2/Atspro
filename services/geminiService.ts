@@ -7,38 +7,48 @@ export class GeminiService {
     return new GoogleGenAI({ apiKey: process.env.API_KEY });
   }
 
-  private calculateATSScore(data: any): number {
-    let earnedPoints = 0;
-    const standardSections = ['experience', 'work', 'education', 'skills', 'summary', 'projects'];
-    const sectionsFound = data.structuredSections?.map((s: any) => s.title.toLowerCase()) || [];
-    
-    if (sectionsFound.some((s: string) => s.includes('experience'))) earnedPoints += 15;
-    if (sectionsFound.some((s: string) => s.includes('education'))) earnedPoints += 10;
-    if (sectionsFound.some((s: string) => s.includes('skills'))) earnedPoints += 10;
-    
-    const skillsCount = data.hardSkillsFound?.length || 0;
-    earnedPoints += Math.min(skillsCount * 2, 25);
-
-    const totalBullets = data.metrics?.totalBulletPoints || 0;
-    const bulletsWithMetrics = data.metrics?.bulletsWithMetrics || 0;
-    if (totalBullets > 0) {
-      earnedPoints += Math.min((bulletsWithMetrics / totalBullets) * 30, 30);
+  private async callWithRetry(fn: () => Promise<any>, retries = 3, delay = 2000): Promise<any> {
+    try {
+      return await fn();
+    } catch (error: any) {
+      console.error("Gemini API Error:", error);
+      const errorMsg = error.message || "";
+      const shouldRetry = errorMsg.includes("500") || errorMsg.includes("429") || errorMsg.includes("xhr") || errorMsg.includes("Proxy");
+      
+      if (retries > 0 && shouldRetry) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return this.callWithRetry(fn, retries - 1, delay * 2);
+      }
+      throw error;
     }
+  }
 
-    const penaltyPoints = (data.criticalErrors?.length || 0) * 10;
-    return Math.max(15, Math.min(100, Math.round(earnedPoints - penaltyPoints)));
+  private calculateATSScore(data: any): number {
+    let score = 30; // base for valid structure
+    const sections = data.structuredSections || [];
+    if (sections.length > 3) score += 20;
+    if (data.hardSkillsFound?.length > 5) score += 20;
+    if (data.metrics?.bulletsWithMetrics > 0) score += 20;
+    score -= (data.criticalErrors?.length || 0) * 10;
+    return Math.max(10, Math.min(98, score));
   }
 
   async analyzeResume(text: string): Promise<AnalysisResult> {
     const ai = this.getClient();
-    const systemInstruction = `ROLE: Professional ATS Auditor. Extract all sections precisely. Preserve the exact ID of each section.`;
+    const prompt = `
+      You are an elite ATS forensic auditor. 
+      CRITICAL: Extract EVERY detail. If a section has multiple bullet points, extract ALL of them exactly. 
+      DO NOT summarize. DO NOT truncate. 
+      Output as JSON. 
+      Resume Text: ${text}
+    `;
 
-    try {
+    return this.callWithRetry(async () => {
       const response = await ai.models.generateContent({
-        model: "gemini-3-pro-preview", 
-        contents: [{ role: 'user', parts: [{ text: systemInstruction + `\n\nINPUT:\n${text}` }] }],
+        model: 'gemini-3-flash-preview',
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
         config: {
-          temperature: 0,
+          temperature: 0.1,
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -53,8 +63,7 @@ export class GeminiService {
                   bulletsWithMetrics: { type: Type.NUMBER },
                   weakVerbsCount: { type: Type.NUMBER },
                   sectionCount: { type: Type.NUMBER }
-                },
-                required: ["totalBulletPoints", "bulletsWithMetrics", "weakVerbsCount", "sectionCount"]
+                }
               },
               formattingIssues: { type: Type.ARRAY, items: { type: Type.STRING } },
               criticalErrors: { type: Type.ARRAY, items: { type: Type.STRING } },
@@ -69,115 +78,62 @@ export class GeminiService {
                     content: { type: Type.STRING },
                     originalContent: { type: Type.STRING }
                   },
-                  required: ["id", "title", "content", "originalContent"]
+                  required: ["id", "title", "content"]
                 }
               }
             },
-            required: ["detectedRole", "hardSkillsFound", "missingHardSkills", "metrics", "formattingIssues", "structuredSections"]
+            required: ["detectedRole", "hardSkillsFound", "structuredSections"]
           }
         }
       });
 
-      const rawData = JSON.parse(response.text || "{}");
-      return { ...rawData, overallScore: this.calculateATSScore(rawData) };
-    } catch (error) {
-      throw new Error("Analysis failed. Engine restart required.");
-    }
+      const data = JSON.parse(response.text || "{}");
+      return { ...data, overallScore: this.calculateATSScore(data) };
+    });
+  }
+
+  async bulkImproveATS(sections: ResumeSection[]): Promise<Record<string, string>> {
+    const ai = this.getClient();
+    const prompt = `Optimize these resume sections for ATS. Return JSON mapping ID to improved HTML content. 
+    Sections: ${JSON.stringify(sections.map(s => ({id: s.id, content: s.content})))}`;
+
+    return this.callWithRetry(async () => {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: [{ role: 'user', parts: [{ text: prompt }]}],
+        config: { temperature: 0.2, responseMimeType: "application/json" }
+      });
+      return JSON.parse(response.text || "{}");
+    });
   }
 
   async improveSection(title: string, content: string): Promise<ImprovedContent> {
     const ai = this.getClient();
-    // نطلب منه التوسع لضمان الوصول لعدد الكلمات المطلوب
-    const prompt = `Rewrite this resume section: "${title}". 
-    CRITICAL: Expand the content significantly with professional details and metrics. 
-    Ensure high keyword density. 
-    Target length for this specific section: 150-200 words.
-    Content: ${content}`;
+    const prompt = `Rewrite "${title}" for ATS. Return JSON { "professional": "...", "atsOptimized": "..." }. Content: ${content}`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: [{ role: 'user', parts: [{ text: prompt }]}],
-      config: {
-        temperature: 0.7,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            professional: { type: Type.STRING },
-            atsOptimized: { type: Type.STRING }
-          },
-          required: ["professional", "atsOptimized"]
-        }
-      }
+    return this.callWithRetry(async () => {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: [{ role: 'user', parts: [{ text: prompt }]}],
+        config: { temperature: 0.3, responseMimeType: "application/json" }
+      });
+      return JSON.parse(response.text || "{}");
     });
-    return JSON.parse(response.text || "{}") as ImprovedContent;
   }
 
   async matchJobDescription(resumeText: string, sections: ResumeSection[], jobDescription: string): Promise<JobMatchResult> {
     const ai = this.getClient();
-    
-    // التعليمات هنا هي المفتاح: نرفق قائمة بالأقسام الحالية ونطلب تعديلها كلها دون استثناء
-    const sectionList = sections.map(s => `${s.id}: ${s.title}`).join(', ');
-    
-    const prompt = `
-      You are an ATS Optimization Engine. 
-      TASK: Match the resume to this JD: "${jobDescription}".
-      
-      CRITICAL RULES:
-      1. YOU MUST RETURN ALL ${sections.length} SECTIONS. Do not omit any section provided in the list below.
-      2. Use the exact IDs provided.
-      3. WORD COUNT TARGET: The total word count for all returned sections combined MUST be between 500 to 700 words. Expand bullet points with technical details and achievements if the current text is too short.
-      4. Incorporate missing keywords naturally.
-      
-      SECTION LIST TO RETURN: [${sectionList}]
-      
-      RESUME CONTENT:
-      ${resumeText}
-    `;
+    const prompt = `Match this resume to the JD. Return JSON with matchPercentage, matchingKeywords, missingKeywords, matchFeedback, and tailoredSections.
+    JD: ${jobDescription}
+    Resume: ${resumeText}`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
-      contents: [{ role: 'user', parts: [{ text: prompt }]}],
-      config: {
-        temperature: 0.2,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            matchingKeywords: { type: Type.ARRAY, items: { type: Type.STRING } },
-            missingKeywords: { type: Type.ARRAY, items: { type: Type.STRING } },
-            matchFeedback: { type: Type.STRING },
-            tailoredSections: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  id: { type: Type.STRING },
-                  title: { type: Type.STRING },
-                  content: { type: Type.STRING }
-                },
-                required: ["id", "title", "content"]
-              }
-            }
-          },
-          required: ["matchingKeywords", "missingKeywords", "matchFeedback", "tailoredSections"]
-        }
-      }
+    return this.callWithRetry(async () => {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: [{ role: 'user', parts: [{ text: prompt }]}],
+        config: { temperature: 0.2, responseMimeType: "application/json" }
+      });
+      return JSON.parse(response.text || "{}");
     });
-
-    const data = JSON.parse(response.text || "{}");
-    
-    // فحص أمان إضافي: إذا كان عدد الأقسام الراجعة أقل، نقوم بدمج المفقود من الأقسام الأصلية
-    let finalTailoredSections = data.tailoredSections;
-    if (finalTailoredSections.length < sections.length) {
-      const returnedIds = new Set(finalTailoredSections.map((s: any) => s.id));
-      const missing = sections.filter(s => !returnedIds.has(s.id));
-      finalTailoredSections = [...finalTailoredSections, ...missing];
-    }
-
-    const totalKeywords = data.matchingKeywords.length + data.missingKeywords.length;
-    const matchPercentage = totalKeywords > 0 ? Math.round((data.matchingKeywords.length / totalKeywords) * 100) : 0;
-
-    return { ...data, tailoredSections: finalTailoredSections, matchPercentage };
   }
 }

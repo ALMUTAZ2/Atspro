@@ -7,17 +7,11 @@ import { JobMatchModal } from './components/JobMatchModal';
 import { AppStep, AnalysisResult, ResumeSection } from './types';
 import { GeminiService } from './services/geminiService';
 import { DocumentService } from './services/documentService';
-import { Cpu, Github, Sparkles, Key, AlertTriangle } from 'lucide-react';
+import { Cpu, Github, Sparkles, Key, AlertTriangle, ShieldCheck } from 'lucide-react';
 
-// Extend the global window object to include the aistudio helpers
+// Extend the global window object to include the aistudio helpers, matching system definitions
 declare global {
-  interface AIStudio {
-    hasSelectedApiKey: () => Promise<boolean>;
-    openSelectKey: () => Promise<void>;
-  }
-
   interface Window {
-    // Fix: Removed readonly modifier to match the environment's pre-existing global declaration and avoid identical modifier errors
     aistudio: AIStudio;
   }
 }
@@ -33,11 +27,11 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const checkApiKey = async () => {
+      // Check if window.aistudio exists before calling its methods
       if (window.aistudio) {
         const hasKey = await window.aistudio.hasSelectedApiKey();
         setApiKeySelected(hasKey);
       } else {
-        // Fallback for non-aistudio environments
         setApiKeySelected(true);
       }
     };
@@ -47,7 +41,7 @@ const App: React.FC = () => {
   const handleOpenKeySelector = async () => {
     if (window.aistudio) {
       await window.aistudio.openSelectKey();
-      // Assume selection was successful per guidelines to avoid race conditions
+      // Assume the key selection was successful to mitigate race condition
       setApiKeySelected(true);
     }
   };
@@ -66,17 +60,17 @@ const App: React.FC = () => {
       
       setStep(AppStep.DASHBOARD);
     } catch (err: any) {
-      console.error("Critical error:", err);
-      // Handle quota or key errors specifically
+      console.error("Critical diagnostic error:", err);
+      // Handle potential API key errors as specified in guidelines
       if (err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
-        alert('API Quota exceeded. Please select a valid API key from a paid GCP project.');
+        alert('API Quota exceeded. PROPHET requires a valid paid API key for deep analysis.');
         handleOpenKeySelector();
       } else if (err.message?.includes('Requested entity was not found')) {
-        alert('API Key error. Please re-select your API key.');
+        alert('Diagnostic Kernel failure: API Key invalid.');
         setApiKeySelected(false);
         handleOpenKeySelector();
       } else {
-        alert('Error analyzing the document. Please ensure it is a valid file or check your API key.');
+        alert('Error performing forensic audit. Check your connection or API key.');
       }
     } finally {
       setLoading(false);
@@ -88,7 +82,6 @@ const App: React.FC = () => {
     setStep(AppStep.EDITOR);
   };
 
-  // API Key selection screen
   if (apiKeySelected === false) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 selection:bg-indigo-500 selection:text-white">
@@ -96,16 +89,16 @@ const App: React.FC = () => {
           <div className="w-20 h-20 bg-indigo-100 rounded-3xl flex items-center justify-center text-indigo-600 mx-auto mb-8">
             <Key size={40} />
           </div>
-          <h1 className="text-3xl font-black text-slate-900 mb-4 tracking-tight">API Key Required</h1>
+          <h1 className="text-3xl font-black text-slate-900 mb-4 tracking-tight">Access Restricted</h1>
           <p className="text-slate-500 mb-8 leading-relaxed">
-            To provide high-quality AI analysis and avoid usage limits, please select a paid API key.
+            PROPHET V4.1 forensic analysis requires a high-tier API key for processing complex structural data.
           </p>
           <div className="space-y-4">
             <button 
               onClick={handleOpenKeySelector}
               className="w-full py-5 bg-indigo-600 text-white rounded-[1.5rem] font-black hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 active:scale-95"
             >
-              Select API Key
+              Select Authorized Key
             </button>
             <a 
               href="https://ai.google.dev/gemini-api/docs/billing" 
@@ -113,14 +106,8 @@ const App: React.FC = () => {
               className="block text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors uppercase tracking-widest"
               rel="noreferrer"
             >
-              Learn about Billing & Quotas
+              API Quotas & Billing
             </a>
-          </div>
-          <div className="mt-8 p-4 bg-amber-50 rounded-2xl border border-amber-100 flex items-start gap-3 text-left">
-            <AlertTriangle className="text-amber-600 shrink-0" size={18} />
-            <p className="text-[11px] text-amber-800 font-medium">
-              Note: You must select an API key from a <strong>paid</strong> GCP project to use the advanced Gemini 3 Pro features without interruption.
-            </p>
           </div>
         </div>
       </div>
@@ -133,9 +120,9 @@ const App: React.FC = () => {
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => setStep(AppStep.UPLOAD)}>
             <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-xl shadow-indigo-100 transition-transform active:scale-95">
-              <Cpu size={22} />
+              <ShieldCheck size={22} />
             </div>
-            <span className="text-xl font-black tracking-tight text-slate-900">ATS<span className="text-indigo-600">PRO</span></span>
+            <span className="text-xl font-black tracking-tight text-slate-900">PROPHET<span className="text-indigo-600">V4.1</span></span>
           </div>
           <div className="flex items-center gap-4">
             <button 
@@ -145,7 +132,7 @@ const App: React.FC = () => {
             >
               <Key size={18} />
             </button>
-            <button onClick={() => setStep(AppStep.UPLOAD)} className="text-sm font-bold text-slate-500 hover:text-indigo-600 transition-colors">Start Over</button>
+            <button onClick={() => setStep(AppStep.UPLOAD)} className="text-sm font-bold text-slate-500 hover:text-indigo-600 transition-colors">Abort Session</button>
             <a href="https://github.com" target="_blank" className="p-2.5 bg-slate-100 rounded-xl hover:bg-slate-200 transition-all text-slate-600">
               <Github size={18} />
             </a>
@@ -161,9 +148,12 @@ const App: React.FC = () => {
               <div className="w-24 h-24 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin absolute top-0 left-0"></div>
               <Cpu className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-indigo-600 animate-pulse" size={32} />
             </div>
-            <h2 className="text-3xl font-black text-slate-900 mb-3 tracking-tight">AI Content Extraction...</h2>
-            <p className="text-slate-500 max-w-sm mx-auto leading-relaxed">
-              We are using Gemini 3 to logically restructure your resume while maintaining 100% of your data.
+            <h2 className="text-3xl font-black text-slate-900 mb-3 tracking-tight">Initiating Forensic Audit...</h2>
+            <p className="text-slate-500 max-w-sm mx-auto leading-relaxed font-mono text-xs">
+              [SYSTEM] PROPHET V4.1 Diagnostic Kernel...<br/>
+              [SYSTEM] Applying synonym awareness filters...<br/>
+              [SYSTEM] Normalizing section structures...<br/>
+              [SYSTEM] Extracting raw metric density...
             </p>
           </div>
         ) : (
@@ -172,13 +162,13 @@ const App: React.FC = () => {
               <div className="space-y-12 animate-in fade-in zoom-in-95 duration-700">
                 <div className="text-center max-w-2xl mx-auto pt-10">
                   <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-[10px] font-black uppercase tracking-widest mb-6 border border-indigo-100">
-                    <Sparkles size={12} /> ATS Optimization Engine
+                    <Cpu size={12} /> Enterprise Diagnostic Kernel V4.1
                   </div>
                   <h1 className="text-6xl font-black text-slate-900 mb-6 leading-[1.1] tracking-tight">
-                    Smart <span className="text-indigo-600">ATS Parsing</span>
+                    Survive the <span className="text-indigo-600">Bot Screen</span>
                   </h1>
                   <p className="text-xl text-slate-500 leading-relaxed font-medium">
-                    Our AI ensures every section of your resume is identified and optimized, from contact info to certifications.
+                    PROPHET V4.1 forensic auditor extracts the raw structural data bots use to mathematically reject you. 
                   </p>
                 </div>
                 <FileUploader onUpload={handleUpload} />

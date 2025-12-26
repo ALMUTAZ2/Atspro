@@ -3,26 +3,33 @@ export interface ResumeSection {
   id: string;
   title: string;
   content: string;
-  originalContent?: string; // لتمكين المستخدم من العودة للنص الأصلي
-}
-
-export interface Improvement {
-  sectionId: string;
-  original: string;
-  professional: string;
-  atsOptimized: string;
+  originalContent?: string;
 }
 
 export interface AnalysisResult {
-  overallScore: number;
-  sectionsFound: string[];
-  structuredSections: ResumeSection[];
-  missingKeywords: string[];
+  detectedRole: string;
+  hardSkillsFound: string[];
+  missingHardSkills: string[];
+  softSkillsFound: string[];
+  metrics: {
+    totalBulletPoints: number;
+    bulletsWithMetrics: number;
+    weakVerbsCount: number;
+    sectionCount: number;
+  };
   formattingIssues: string[];
-  skills: string[];
+  criticalErrors: string[];
   strengths: string[];
   weaknesses: string[];
-  suggestedImprovements: Improvement[];
+  summaryFeedback: string;
+  structuredSections: ResumeSection[];
+  // Calculated on frontend/service after raw data is received
+  overallScore?: number;
+}
+
+export interface ImprovedContent {
+  professional: string;
+  atsOptimized: string;
 }
 
 export interface JobMatchResult {

@@ -1,9 +1,10 @@
 
 import React, { useState } from 'react';
-import { ResumeSection } from '../types';
+import { ResumeSection, ImprovedContent } from '../types';
 import { Edit3, Sparkles, Download, ArrowLeft, Check, Loader2, X, RefreshCw, FileText, FileDown, Eye } from 'lucide-react';
 import { ExportService } from '../services/exportService';
-import { GeminiService, ImprovedContent } from '../services/geminiService';
+// Only import GeminiService as ImprovedContent is in types.ts
+import { GeminiService } from '../services/geminiService';
 
 interface EditorProps {
   sections: ResumeSection[];

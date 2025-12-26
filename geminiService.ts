@@ -1,44 +1,72 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { AnalysisResult, JobMatchResult, ResumeSection, ImprovedContent } from "../types";
+import { AnalysisResult, JobMatchResult, ResumeSection, ImprovedContent } from "./types";
 
 export class GeminiService {
   private getClient() {
+    // Corrected to use process.env.API_KEY directly as per guidelines
     return new GoogleGenAI({ apiKey: process.env.API_KEY });
   }
 
-  private calculateATSScore(data: any): number {
-    let earnedPoints = 0;
-    const standardSections = ['experience', 'work', 'education', 'skills', 'summary', 'projects'];
-    const sectionsFound = data.structuredSections?.map((s: any) => s.title.toLowerCase()) || [];
-    
-    if (sectionsFound.some((s: string) => s.includes('experience'))) earnedPoints += 15;
-    if (sectionsFound.some((s: string) => s.includes('education'))) earnedPoints += 10;
-    if (sectionsFound.some((s: string) => s.includes('skills'))) earnedPoints += 10;
-    
-    const skillsCount = data.hardSkillsFound?.length || 0;
-    earnedPoints += Math.min(skillsCount * 2, 25);
+  /**
+   * 🧠 Forensic Scoring Algorithm V4
+   * Scores based on proof of impact and industry alignment.
+   */
+  private calculateScore(data: any): number {
+    let score = 15;
 
-    const totalBullets = data.metrics?.totalBulletPoints || 0;
-    const bulletsWithMetrics = data.metrics?.bulletsWithMetrics || 0;
-    if (totalBullets > 0) {
-      earnedPoints += Math.min((bulletsWithMetrics / totalBullets) * 30, 30);
+    // 1. Structure Bonus
+    const hasExperience = data.structuredSections?.some((s: any) => s.title.toLowerCase().includes('experience'));
+    const hasEducation = data.structuredSections?.some((s: any) => s.title.toLowerCase().includes('education'));
+    const hasSkills = data.structuredSections?.some((s: any) => s.title.toLowerCase().includes('skills'));
+    
+    if (hasExperience) score += 10;
+    if (hasEducation) score += 5;
+    if (hasSkills) score += 5;
+
+    // 2. Hard Skills Bonus
+    const skillsPoints = Math.min((data.hardSkillsFound?.length || 0) * 2, 25);
+    score += skillsPoints;
+
+    // 3. Impact Bonus
+    if (data.metrics?.totalBulletPoints > 0) {
+      const metricRatio = data.metrics.bulletsWithMetrics / data.metrics.totalBulletPoints;
+      const impactPoints = Math.min((metricRatio / 0.3) * 15, 20);
+      score += impactPoints;
     }
 
-    const penaltyPoints = (data.criticalErrors?.length || 0) * 10;
-    return Math.max(15, Math.min(100, Math.round(earnedPoints - penaltyPoints)));
+    // 4. Penalties
+    const missingCount = data.missingHardSkills?.length || 0;
+    score -= Math.min(missingCount * 3, 15);
+    score -= Math.min((data.formattingIssues?.length || 0) * 4, 12);
+    score -= Math.min((data.metrics?.weakVerbsCount || 0) * 1, 10);
+    score -= (data.criticalErrors?.length || 0) * 15;
+
+    return Math.max(0, Math.min(100, Math.round(score)));
   }
 
   async analyzeResume(text: string): Promise<AnalysisResult> {
     const ai = this.getClient();
-    const systemInstruction = `ROLE: Professional ATS Auditor. Extract all sections precisely. Preserve the exact ID of each section.`;
+    
+    const systemInstruction = `
+      ROLE: You are "PROPHET," a Forensic ATS Auditor. Your job is purely diagnostic.
+      
+      CORE RULES:
+      1. Structure Check: Identify key resume sections strictly.
+      2. Synonyms: React and React.js are the same.
+      3. Gap Analysis: Infer role and list truly missing critical skills.
+      4. Formatting: Flag non-standard ATS formatting.
+      
+      OUTPUT: Return RAW DATA in JSON.
+    `;
 
     try {
       const response = await ai.models.generateContent({
-        model: "gemini-3-pro-preview", 
-        contents: [{ role: 'user', parts: [{ text: systemInstruction + `\n\nINPUT:\n${text}` }] }],
+        model: "gemini-3-flash-preview", 
+        contents: [
+          { role: 'user', parts: [{ text: systemInstruction + `\n\nANALYZE THIS RESUME:\n${text}` }] }
+        ],
         config: {
-          temperature: 0,
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -46,6 +74,7 @@ export class GeminiService {
               detectedRole: { type: Type.STRING },
               hardSkillsFound: { type: Type.ARRAY, items: { type: Type.STRING } },
               missingHardSkills: { type: Type.ARRAY, items: { type: Type.STRING } },
+              softSkillsFound: { type: Type.ARRAY, items: { type: Type.STRING } },
               metrics: {
                 type: Type.OBJECT,
                 properties: {
@@ -54,10 +83,12 @@ export class GeminiService {
                   weakVerbsCount: { type: Type.NUMBER },
                   sectionCount: { type: Type.NUMBER }
                 },
-                required: ["totalBulletPoints", "bulletsWithMetrics", "weakVerbsCount", "sectionCount"]
+                required: ["totalBulletPoints", "bulletsWithMetrics", "weakVerbsCount"]
               },
               formattingIssues: { type: Type.ARRAY, items: { type: Type.STRING } },
               criticalErrors: { type: Type.ARRAY, items: { type: Type.STRING } },
+              strengths: { type: Type.ARRAY, items: { type: Type.STRING } },
+              weaknesses: { type: Type.ARRAY, items: { type: Type.STRING } },
               summaryFeedback: { type: Type.STRING },
               structuredSections: {
                 type: Type.ARRAY,
@@ -78,27 +109,24 @@ export class GeminiService {
         }
       });
 
+      // Fixed: Use .text property directly
       const rawData = JSON.parse(response.text || "{}");
-      return { ...rawData, overallScore: this.calculateATSScore(rawData) };
+      const overallScore = this.calculateScore(rawData);
+      return { ...rawData, overallScore };
     } catch (error) {
-      throw new Error("Analysis failed. Engine restart required.");
+      console.error("Gemini Analysis Error:", error);
+      throw new Error("Failed to analyze resume. Please check your API Key.");
     }
   }
 
   async improveSection(title: string, content: string): Promise<ImprovedContent> {
     const ai = this.getClient();
-    // نطلب منه التوسع لضمان الوصول لعدد الكلمات المطلوب
-    const prompt = `Rewrite this resume section: "${title}". 
-    CRITICAL: Expand the content significantly with professional details and metrics. 
-    Ensure high keyword density. 
-    Target length for this specific section: 150-200 words.
-    Content: ${content}`;
-
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: [{ role: 'user', parts: [{ text: prompt }]}],
+      contents: [
+        { role: 'user', parts: [{ text: `Act as an Expert Resume Writer. Rewrite "${title}" section.\nOriginal: "${content}"\nReturn JSON with "professional" and "atsOptimized" keys.` }]}
+      ],
       config: {
-        temperature: 0.7,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -110,36 +138,18 @@ export class GeminiService {
         }
       }
     });
+    // Fixed: Use .text property directly
     return JSON.parse(response.text || "{}") as ImprovedContent;
   }
 
   async matchJobDescription(resumeText: string, sections: ResumeSection[], jobDescription: string): Promise<JobMatchResult> {
     const ai = this.getClient();
-    
-    // التعليمات هنا هي المفتاح: نرفق قائمة بالأقسام الحالية ونطلب تعديلها كلها دون استثناء
-    const sectionList = sections.map(s => `${s.id}: ${s.title}`).join(', ');
-    
-    const prompt = `
-      You are an ATS Optimization Engine. 
-      TASK: Match the resume to this JD: "${jobDescription}".
-      
-      CRITICAL RULES:
-      1. YOU MUST RETURN ALL ${sections.length} SECTIONS. Do not omit any section provided in the list below.
-      2. Use the exact IDs provided.
-      3. WORD COUNT TARGET: The total word count for all returned sections combined MUST be between 500 to 700 words. Expand bullet points with technical details and achievements if the current text is too short.
-      4. Incorporate missing keywords naturally.
-      
-      SECTION LIST TO RETURN: [${sectionList}]
-      
-      RESUME CONTENT:
-      ${resumeText}
-    `;
+    const prompt = `Match Job Description to Resume.\nJD: ${jobDescription}\nResume: ${resumeText}\nSections: ${JSON.stringify(sections)}`;
 
     const response = await ai.models.generateContent({
       model: "gemini-3-pro-preview",
       contents: [{ role: 'user', parts: [{ text: prompt }]}],
       config: {
-        temperature: 0.2,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -165,19 +175,13 @@ export class GeminiService {
       }
     });
 
+    // Fixed: Use .text property directly
     const data = JSON.parse(response.text || "{}");
-    
-    // فحص أمان إضافي: إذا كان عدد الأقسام الراجعة أقل، نقوم بدمج المفقود من الأقسام الأصلية
-    let finalTailoredSections = data.tailoredSections;
-    if (finalTailoredSections.length < sections.length) {
-      const returnedIds = new Set(finalTailoredSections.map((s: any) => s.id));
-      const missing = sections.filter(s => !returnedIds.has(s.id));
-      finalTailoredSections = [...finalTailoredSections, ...missing];
-    }
+    const matchedCount = data.matchingKeywords?.length || 0;
+    const missingCount = data.missingKeywords?.length || 0;
+    const totalKeywords = matchedCount + missingCount;
+    const calculatedMatch = totalKeywords > 0 ? Math.round((matchedCount / totalKeywords) * 100) : 0;
 
-    const totalKeywords = data.matchingKeywords.length + data.missingKeywords.length;
-    const matchPercentage = totalKeywords > 0 ? Math.round((data.matchingKeywords.length / totalKeywords) * 100) : 0;
-
-    return { ...data, tailoredSections: finalTailoredSections, matchPercentage };
+    return { ...data, matchPercentage: calculatedMatch } as JobMatchResult;
   }
 }

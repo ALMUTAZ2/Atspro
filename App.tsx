@@ -9,12 +9,8 @@ import { GeminiService } from './services/geminiService';
 import { DocumentService } from './services/documentService';
 import { Cpu, Github, Sparkles, Key, AlertTriangle, ShieldCheck } from 'lucide-react';
 
-// Extend the global window object to include the aistudio helpers, matching system definitions
-declare global {
-  interface Window {
-    aistudio: AIStudio;
-  }
-}
+// The global window.aistudio and AIStudio type are already provided by the environment.
+// Redefining them causes conflicts with identical modifiers and shadowing of the global AIStudio type.
 
 const App: React.FC = () => {
   const [step, setStep] = useState<AppStep>(AppStep.UPLOAD);
@@ -27,7 +23,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const checkApiKey = async () => {
-      // Check if window.aistudio exists before calling its methods
+      // Safely check and interact with aistudio
       if (window.aistudio) {
         const hasKey = await window.aistudio.hasSelectedApiKey();
         setApiKeySelected(hasKey);

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { FileUploader } from './components/FileUploader';
 import { Dashboard } from './components/Dashboard';
@@ -7,23 +6,18 @@ import { JobMatchModal } from './components/JobMatchModal';
 import { AppStep, AnalysisResult, ResumeSection } from './types';
 import { GeminiService } from './services/geminiService';
 import { DocumentService } from './services/documentService';
-import { Cpu, Github, Sparkles, Key, ShieldCheck, RefreshCcw } from 'lucide-react';
+import { Cpu, Sparkles, ShieldCheck, RefreshCcw } from 'lucide-react';
 
 const STORAGE_KEYS = {
   STEP: 'ats_app_step',
   RESUME_TEXT: 'ats_resume_text',
   ANALYSIS: 'ats_analysis',
-  SECTIONS: 'ats_sections'
+  SECTIONS: 'ats_sections',
+  HISTORY: 'ats_history'
 };
 
 const App: React.FC = () => {
-  const [step, setStep] = useState<AppStep>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.STEP);
-      return (saved as AppStep) || AppStep.UPLOAD;
-    } catch { return AppStep.UPLOAD; }
-  });
-  
+  const [step, setStep] = useState<AppStep>(() => (localStorage.getItem(STORAGE_KEYS.STEP) as AppStep) || AppStep.UPLOAD);
   const [resumeText, setResumeText] = useState(() => localStorage.getItem(STORAGE_KEYS.RESUME_TEXT) || '');
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(() => {
     try {
@@ -38,50 +32,26 @@ const App: React.FC = () => {
     } catch { return []; }
   });
 
-  const [showMatchModal, setShowMatchModal] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [apiKeySelected, setApiKeySelected] = useState<boolean | null>(null);
+  const [showMatchModal, setShowMatchModal] = useState(false);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.STEP, step);
     localStorage.setItem(STORAGE_KEYS.RESUME_TEXT, resumeText);
     if (analysis) localStorage.setItem(STORAGE_KEYS.ANALYSIS, JSON.stringify(analysis));
-    else localStorage.removeItem(STORAGE_KEYS.ANALYSIS);
     if (sections.length > 0) localStorage.setItem(STORAGE_KEYS.SECTIONS, JSON.stringify(sections));
-    else localStorage.removeItem(STORAGE_KEYS.SECTIONS);
   }, [step, resumeText, analysis, sections]);
 
-  useEffect(() => {
-    const checkApiKey = async () => {
-      if (window.aistudio) {
-        const hasKey = await window.aistudio.hasSelectedApiKey();
-        setApiKeySelected(hasKey);
-      } else { setApiKeySelected(true); }
-    };
-    checkApiKey();
-  }, []);
-
-  const handleOpenKeySelector = async () => {
-    if (window.aistudio) {
-      await window.aistudio.openSelectKey();
-      setApiKeySelected(true);
-    }
-  };
-
   const handleReset = useCallback(() => {
-    if (window.confirm("هل أنت متأكد من البدء بفحص جديد؟ سيتم مسح كافة البيانات الحالية.")) {
-      // 1. Clear State Immediately
+    if (window.confirm("العودة لشاشة الرفع للبدء بفحص جديد؟ (سيتم حفظ النتيجة الحالية في السجل)")) {
       setStep(AppStep.UPLOAD);
       setAnalysis(null);
       setSections([]);
       setResumeText('');
-      setShowMatchModal(false);
-      setLoading(false);
-
-      // 2. Clear Storage
-      Object.values(STORAGE_KEYS).forEach(k => localStorage.removeItem(k));
-      
-      // 3. UI Actions
+      localStorage.removeItem(STORAGE_KEYS.STEP);
+      localStorage.removeItem(STORAGE_KEYS.ANALYSIS);
+      localStorage.removeItem(STORAGE_KEYS.SECTIONS);
+      localStorage.removeItem(STORAGE_KEYS.RESUME_TEXT);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }, []);
@@ -90,65 +60,49 @@ const App: React.FC = () => {
     setLoading(true);
     try {
       const text = await DocumentService.extractText(file);
-      setResumeText(text);
+      if (!text || text.length < 50) throw new Error("تعذر استخراج نص كافٍ من الملف.");
       
+      setResumeText(text);
       const gemini = new GeminiService();
       const result = await gemini.analyzeResume(text);
       
+      const newHistoryEntry = {
+        id: Date.now(),
+        fileName: file.name,
+        date: new Date().toLocaleDateString('ar-SA'),
+        time: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
+        score: result.overallScore || 0
+      };
+      const existingHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.HISTORY) || '[]');
+      const updatedHistory = [newHistoryEntry, ...existingHistory].slice(0, 5);
+      localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(updatedHistory));
+
       setAnalysis(result);
       setSections(result.structuredSections);
       setStep(AppStep.DASHBOARD);
-    } catch (err: any) {
-      console.error("Critical error:", err);
-      if (err.message?.includes("429") || err.message?.includes("Quota")) {
-        alert('لقد نفدت حصة الاستخدام (Quota). يرجى المحاولة لاحقاً أو تغيير مفتاح الـ API.');
-      } else {
-        alert('فشل المحرك في تحليل الملف. تأكد من أن الملف نصي ومفتاح الـ API صحيح.');
-      }
+    } catch (err: any) { 
+      console.error("Analysis Error:", err);
+      alert(err.message || "حدث خطأ غير متوقع. يرجى المحاولة مجدداً.");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleApplyTailoring = (tailoredSections: ResumeSection[]) => {
-    setSections(tailoredSections);
-    setStep(AppStep.EDITOR);
-  };
-
-  if (apiKeySelected === false) {
-    return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 text-center font-sans">
-        <div className="max-w-md w-full bg-white rounded-[3rem] p-12 shadow-2xl">
-          <div className="w-20 h-20 bg-indigo-100 rounded-3xl flex items-center justify-center text-indigo-600 mx-auto mb-8 animate-bounce">
-            <Key size={40} />
-          </div>
-          <h1 className="text-3xl font-black text-slate-900 mb-4 tracking-tight">API Key Required</h1>
-          <p className="text-slate-500 mb-8 leading-relaxed">يرجى اختيار مفتاح API نشط لتتمكن من استخدام ميزات الفحص والتحسين المتقدمة.</p>
-          <button onClick={handleOpenKeySelector} className="w-full py-5 bg-indigo-600 text-white rounded-[1.5rem] font-black hover:bg-indigo-700 transition-all shadow-xl active:scale-95">Select API Key</button>
-        </div>
-      </div>
-    );
-  }
-
-  const isAtStart = step === AppStep.UPLOAD && resumeText === '';
-
   return (
-    <div className="min-h-screen flex flex-col selection:bg-indigo-100 selection:text-indigo-900 font-sans">
+    <div className="min-h-screen flex flex-col bg-slate-50 font-sans selection:bg-indigo-100">
       <nav className="border-b bg-white/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => !isAtStart && handleReset()}>
-            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-xl">
-              <ShieldCheck size={22} />
-            </div>
-            <span className="text-xl font-black tracking-tight text-slate-900">PROPHET<span className="text-indigo-600">V4.5</span></span>
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => step !== AppStep.UPLOAD && handleReset()}>
+            <ShieldCheck className="text-indigo-600" size={32} />
+            <span className="text-xl font-black tracking-tight text-slate-900 uppercase">Prophet<span className="text-indigo-600">V4.5</span></span>
           </div>
-          <div className="flex items-center gap-4">
-            {!isAtStart && (
-              <button onClick={handleReset} className="flex items-center gap-2 px-4 py-2 text-sm font-black text-rose-500 hover:bg-rose-50 rounded-xl transition-all">
-                <RefreshCcw size={16} /> Scan New
-              </button>
-            )}
-            <button onClick={handleOpenKeySelector} className="p-2 text-slate-400 hover:text-indigo-600 transition-colors rounded-lg"><Key size={18} /></button>
+          
+          <div className="flex gap-4 items-center">
+             {step !== AppStep.UPLOAD && (
+               <button onClick={handleReset} className="flex items-center gap-2 px-5 py-2.5 text-sm font-black text-rose-500 hover:bg-rose-50 rounded-xl transition-all active:scale-95 border border-transparent hover:border-rose-100">
+                 <RefreshCcw size={16} /> Scan New
+               </button>
+             )}
           </div>
         </div>
       </nav>
@@ -162,17 +116,17 @@ const App: React.FC = () => {
               <Cpu className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-indigo-600" size={32} />
             </div>
             <h2 className="text-3xl font-black text-slate-900 mb-3 tracking-tight">تحليل مكثف للبيانات...</h2>
-            <p className="text-slate-500 max-w-sm mx-auto leading-relaxed font-mono text-xs opacity-60">Scanning with Flash Engine V4.5</p>
+            <p className="text-slate-500 max-w-sm mx-auto leading-relaxed font-mono text-xs opacity-60 uppercase tracking-widest">Scanning with Prophet Engine</p>
           </div>
         ) : (
           <>
             {step === AppStep.UPLOAD && (
               <div className="space-y-12 animate-in fade-in zoom-in-95 duration-700">
                 <div className="text-center max-w-2xl mx-auto pt-10">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-[10px] font-black uppercase mb-6 border border-indigo-100">
-                    <Sparkles size={12} /> Forensic Intelligence Kernel V4.5
+                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-[10px] font-black uppercase mb-6 border border-indigo-100 tracking-widest">
+                    <Sparkles size={12} /> Forensic Intelligence Active
                   </div>
-                  <h1 className="text-6xl font-black text-slate-900 mb-6 leading-[1.1] tracking-tight">تخطَّ حواجز الـ <span className="text-indigo-600">Bots</span></h1>
+                  <h1 className="text-6xl font-black text-slate-900 mb-6 leading-[1.1] tracking-tight">تخطَّ حواجز الـ <span className="text-indigo-600">Bots</span></h1>
                   <p className="text-xl text-slate-500 leading-relaxed font-medium">نظام PROPHET يفكك سيرتك الذاتية ويعيد صياغتها لتجتاز أنظمة الفرز (ATS) بأعلى الدرجات.</p>
                 </div>
                 <FileUploader onUpload={handleUpload} />
@@ -187,9 +141,13 @@ const App: React.FC = () => {
           </>
         )}
       </main>
-
       {showMatchModal && (
-        <JobMatchModal resumeText={resumeText} sections={sections} onClose={() => setShowMatchModal(false)} onApplyTailoring={handleApplyTailoring} />
+        <JobMatchModal 
+          resumeText={resumeText} 
+          sections={sections} 
+          onClose={() => setShowMatchModal(false)} 
+          onApplyTailoring={(t) => { setSections(t); setStep(AppStep.EDITOR); }} 
+        />
       )}
     </div>
   );

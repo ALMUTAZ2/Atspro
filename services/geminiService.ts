@@ -1,54 +1,56 @@
-
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { AnalysisResult, JobMatchResult, ResumeSection, ImprovedContent } from "../types";
 
 export class GeminiService {
-  private async callWithRetry(fn: () => Promise<any>, retries = 3, delay = 1500): Promise<any> {
-    try {
-      return await fn();
-    } catch (error: any) {
-      const isQuotaError = error.message?.includes("429") || error.message?.includes("RESOURCE_EXHAUSTED") || error.message?.includes("Quota");
-      if (retries > 0 && isQuotaError) {
-        await new Promise(resolve => setTimeout(resolve, delay));
-        return this.callWithRetry(fn, retries - 1, delay * 2);
-      }
-      throw error;
+  private getClient() {
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) {
+      throw new Error("API Key is missing. Please check your configuration.");
     }
+    return new GoogleGenAI({ apiKey });
   }
 
   private calculateATSScore(data: any): number {
-    let earnedPoints = 25; 
-    const sectionsFound = data.structuredSections?.map((s: any) => s.title.toLowerCase()) || [];
+    let score = 20; 
+    const sections = data?.structuredSections?.length || 0;
+    if (sections >= 4) score += 15;
     
-    if (sectionsFound.some((s: string) => s.includes('experience') || s.includes('work'))) earnedPoints += 20;
-    if (sectionsFound.some((s: string) => s.includes('education'))) earnedPoints += 10;
-    if (sectionsFound.some((s: string) => s.includes('skills'))) earnedPoints += 15;
-    
-    const skillsCount = data.hardSkillsFound?.length || 0;
-    earnedPoints += Math.min(skillsCount * 1.5, 20);
+    const hardSkills = data?.hardSkillsFound?.length || 0;
+    score += Math.min(hardSkills * 2, 25);
 
-    const totalBullets = data.metrics?.totalBulletPoints || 0;
-    const bulletsWithMetrics = data.metrics?.bulletsWithMetrics || 0;
-    if (totalBullets > 0) {
-      earnedPoints += Math.min((bulletsWithMetrics / totalBullets) * 20, 20);
+    const metrics = data?.metrics || { totalBulletPoints: 0, bulletsWithMetrics: 0 };
+    const total = metrics.totalBulletPoints || 0;
+    const impact = metrics.bulletsWithMetrics || 0;
+    
+    if (total > 0) {
+      const ratio = impact / total;
+      score += Math.min(ratio * 30, 30);
     }
 
-    const penaltyPoints = (data.criticalErrors?.length || 0) * 5;
-    return Math.max(10, Math.min(100, Math.round(earnedPoints - penaltyPoints)));
+    const errors = (data?.criticalErrors?.length || 0) * 10;
+    const formatting = (data?.formattingIssues?.length || 0) * 5;
+    
+    return Math.max(5, Math.min(100, Math.round(score - errors - formatting)));
   }
 
   async analyzeResume(text: string): Promise<AnalysisResult> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const systemInstruction = `ROLE: Professional ATS Forensic Auditor. Use gemini-3-flash-preview.
-    TASK: Break down the resume into discrete sections. Extract Header, Summary, Experience, Education, Skills, etc.
-    OUTPUT: Strict JSON format.`;
+    const ai = this.getClient();
+    const systemInstruction = `
+      ROLE: High-Fidelity Professional Resume Parser.
+      STRICT RULE: 
+      1. DO NOT DELETE ANY TEXT. Capture 100% of the input text provided.
+      2. Identify standard sections (Experience, Skills, etc.).
+      3. If any text does not fit a standard section, create a section titled "General Information" or "Miscellaneous" to hold it.
+      4. Preserve all numbers, dates, and names exactly.
+      5. Format descriptions as HTML lists (<ul><li>).
+      6. Output MUST follow the JSON schema.
+    `;
 
-    return this.callWithRetry(async () => {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview', 
-        contents: [{ role: 'user', parts: [{ text: systemInstruction + `\n\nINPUT RESUME:\n${text}` }] }],
+    try {
+      const response: GenerateContentResponse = await ai.models.generateContent({
+        model: 'gemini-2.0-flash-lite',
+        contents: [{ role: 'user', parts: [{ text: `${systemInstruction}\n\nFULL RESUME TEXT:\n${text}` }] }],
         config: {
-          temperature: 0.1,
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -56,6 +58,7 @@ export class GeminiService {
               detectedRole: { type: Type.STRING },
               hardSkillsFound: { type: Type.ARRAY, items: { type: Type.STRING } },
               missingHardSkills: { type: Type.ARRAY, items: { type: Type.STRING } },
+              softSkillsFound: { type: Type.ARRAY, items: { type: Type.STRING } },
               metrics: {
                 type: Type.OBJECT,
                 properties: {
@@ -76,52 +79,96 @@ export class GeminiService {
                   properties: {
                     id: { type: Type.STRING },
                     title: { type: Type.STRING },
-                    content: { type: Type.STRING },
-                    originalContent: { type: Type.STRING }
+                    content: { type: Type.STRING }
                   },
-                  required: ["id", "title", "content", "originalContent"]
+                  required: ["id", "title", "content"]
                 }
               }
             },
-            required: ["detectedRole", "hardSkillsFound", "missingHardSkills", "metrics", "formattingIssues", "structuredSections"]
+            required: ["detectedRole", "metrics", "structuredSections", "summaryFeedback"]
           }
         }
       });
 
-      const rawData = JSON.parse(response.text || "{}");
-      return { ...rawData, overallScore: this.calculateATSScore(rawData) };
-    });
+      const data = JSON.parse(response.text || "{}");
+      
+      const sanitized: AnalysisResult = {
+        detectedRole: data.detectedRole || "Unknown Professional",
+        hardSkillsFound: data.hardSkillsFound || [],
+        missingHardSkills: data.missingHardSkills || [],
+        softSkillsFound: data.softSkillsFound || [],
+        metrics: {
+          totalBulletPoints: data.metrics?.totalBulletPoints ?? 0,
+          bulletsWithMetrics: data.metrics?.bulletsWithMetrics ?? 0,
+          weakVerbsCount: data.metrics?.weakVerbsCount ?? 0,
+          sectionCount: data.metrics?.sectionCount ?? 0
+        },
+        formattingIssues: data.formattingIssues || [],
+        criticalErrors: data.criticalErrors || [],
+        strengths: [],
+        weaknesses: [],
+        summaryFeedback: data.summaryFeedback || "Analysis complete.",
+        structuredSections: data.structuredSections || [],
+      };
+
+      sanitized.overallScore = this.calculateATSScore(sanitized);
+      return sanitized;
+    } catch (error) {
+      console.error("Gemini Analysis Error:", error);
+      throw new Error("فشل في تحليل السيرة الذاتية. يرجى التأكد من أن الملف يحتوي على نص.");
+    }
   }
 
   async bulkImproveATS(sections: ResumeSection[]): Promise<Record<string, string>> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const prompt = `Improve ALL resume sections for ATS compliance. Use high-impact keywords and metrics.
-    Sections to improve: ${JSON.stringify(sections.map(s => ({ id: s.id, title: s.title, content: s.content })))}
-    Return a JSON object where keys are section IDs and values are the new HTML content with <ul><li> tags.`;
+    const ai = this.getClient();
+    const prompt = `
+      TASK: Bulk ATS Optimization. 
+      For each provided section, rewrite its content to use stronger action verbs and metrics. 
+      IMPORTANT: Keep the same meaning and facts, but make it more impactful for ATS.
+      Return the results as an array of objects matching the schema.
+    `;
 
-    return this.callWithRetry(async () => {
+    try {
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: [{ role: 'user', parts: [{ text: prompt }]}],
-        config: {
-          temperature: 0.2,
-          responseMimeType: "application/json"
+        model: 'gemini-2.0-flash-lite',
+        contents: [{ role: 'user', parts: [{ text: `${prompt}\n\nSections: ${JSON.stringify(sections.map(s => ({ id: s.id, content: s.content })))}` }] }],
+        config: { 
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                id: { type: Type.STRING },
+                improvedContent: { type: Type.STRING }
+              },
+              required: ["id", "improvedContent"]
+            }
+          }
         }
       });
-      return JSON.parse(response.text || "{}");
-    });
+
+      const data = JSON.parse(response.text || "[]");
+      const mapping: Record<string, string> = {};
+      data.forEach((item: any) => {
+        mapping[item.id] = item.improvedContent;
+      });
+      return mapping;
+    } catch (error) {
+      console.error("Bulk Improvement Error:", error);
+      throw new Error("فشل في معالجة طلب التحسين الشامل.");
+    }
   }
 
   async improveSection(title: string, content: string): Promise<ImprovedContent> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const prompt = `Rewrite "${title}" for a resume. Professional version should be elegant. ATS version should use keywords and metrics. Format with <ul><li>. Content: ${content}`;
+    const ai = this.getClient();
+    const prompt = `Optimize the "${title}" section for ATS. Return JSON with 'professional' and 'atsOptimized' versions. Original: ${content}`;
 
-    return this.callWithRetry(async () => {
+    try {
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: [{ role: 'user', parts: [{ text: prompt }]}],
+        model: 'gemini-2.0-flash-lite',
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
         config: {
-          temperature: 0.7,
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -133,24 +180,27 @@ export class GeminiService {
           }
         }
       });
-      return JSON.parse(response.text || "{}") as ImprovedContent;
-    });
+      return JSON.parse(response.text || "{}");
+    } catch (error) {
+      console.error("Section Improvement Error:", error);
+      throw error;
+    }
   }
 
   async matchJobDescription(resumeText: string, sections: ResumeSection[], jobDescription: string): Promise<JobMatchResult> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const prompt = `Tailor these resume sections to this Job Description. JD: ${jobDescription}. Sections: ${JSON.stringify(sections)}`;
+    const ai = this.getClient();
+    const prompt = `Match resume to JD. Resume: ${resumeText}\n\nJD: ${jobDescription}`;
 
-    return this.callWithRetry(async () => {
+    try {
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: [{ role: 'user', parts: [{ text: prompt }]}],
+        model: 'gemini-2.0-flash-lite',
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
         config: {
-          temperature: 0.2,
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
             properties: {
+              matchPercentage: { type: Type.NUMBER },
               matchingKeywords: { type: Type.ARRAY, items: { type: Type.STRING } },
               missingKeywords: { type: Type.ARRAY, items: { type: Type.STRING } },
               matchFeedback: { type: Type.STRING },
@@ -167,35 +217,14 @@ export class GeminiService {
                 }
               }
             },
-            required: ["matchingKeywords", "missingKeywords", "matchFeedback", "tailoredSections"]
+            required: ["matchPercentage", "matchFeedback", "tailoredSections"]
           }
         }
       });
-
-      const data = JSON.parse(response.text || "{}");
-      const tailoredMap = new Map();
-      if (data.tailoredSections) {
-        data.tailoredSections.forEach((s: any) => tailoredMap.set(s.id, s));
-      }
-
-      const finalTailoredSections = sections.map(original => {
-        const tailored = tailoredMap.get(original.id);
-        return {
-          id: original.id,
-          title: tailored?.title || original.title,
-          content: tailored?.content || original.content,
-          originalContent: original.originalContent || original.content
-        };
-      });
-
-      const totalK = (data.matchingKeywords?.length || 0) + (data.missingKeywords?.length || 0);
-      const matchP = totalK > 0 ? Math.round((data.matchingKeywords.length / totalK) * 100) : 0;
-
-      return { 
-        ...data, 
-        tailoredSections: finalTailoredSections, 
-        matchPercentage: matchP 
-      };
-    });
+      return JSON.parse(response.text || "{}");
+    } catch (error) {
+      console.error("JD Match Error:", error);
+      throw error;
+    }
   }
 }

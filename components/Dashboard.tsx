@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { AnalysisResult } from '../types';
 import { ScoreGauge } from './ScoreGauge';
@@ -12,7 +11,6 @@ import {
   Edit3, 
   FileSearch,
   Zap,
-  Info,
   ShieldCheck,
   TrendingUp,
   Award,
@@ -27,11 +25,14 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ result, onEdit, onOpenMatch, onNewScan }) => {
-  const metricRatio = result.metrics.totalBulletPoints > 0 
-    ? (result.metrics.bulletsWithMetrics / result.metrics.totalBulletPoints) * 100 
+  // حماية إضافية للبيانات المستلمة
+  const metrics = result?.metrics || { totalBulletPoints: 0, bulletsWithMetrics: 0, weakVerbsCount: 0, sectionCount: 0 };
+  
+  const metricRatio = (metrics?.totalBulletPoints || 0) > 0 
+    ? ((metrics?.bulletsWithMetrics || 0) / (metrics?.totalBulletPoints || 1)) * 100 
     : 0;
 
-  const score = result.overallScore || 0;
+  const score = result?.overallScore || 0;
   const isCritical = score < 35;
   const isExcellent = score >= 75;
 
@@ -66,13 +67,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onEdit, onOpenMatc
               </button>
             </div>
             <h2 className="text-2xl font-black text-slate-800 leading-tight mb-4 italic">
-              "{result.summaryFeedback}"
+              "{result?.summaryFeedback || "لم يتم توفير ملخص للتحليل."}"
             </h2>
             <div className="flex flex-wrap gap-4 mt-8">
               <div className="bg-slate-50 px-6 py-4 rounded-2xl border border-slate-100">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">الدور الوظيفي المكتشف</p>
                 <p className="text-lg font-black text-slate-800 flex items-center gap-2">
-                  <Target size={18} className="text-indigo-500" /> {result.detectedRole}
+                  <Target size={18} className="text-indigo-500" /> {result?.detectedRole || "غير محدد"}
                 </p>
               </div>
               <div className="bg-indigo-50 px-6 py-4 rounded-2xl border border-indigo-100">
@@ -140,7 +141,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onEdit, onOpenMatc
       </div>
 
       <div className="grid md:grid-cols-3 gap-8">
-        {/* Protocol 1: Keywords */}
+        {/* Keywords */}
         <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col">
           <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
             <FileSearch size={16} /> المهارات المستخرجة
@@ -149,7 +150,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onEdit, onOpenMatc
             <div>
               <p className="text-[10px] font-black text-emerald-500 uppercase mb-3 tracking-tighter">موجود في سيرتك</p>
               <div className="flex flex-wrap gap-1.5">
-                {result.hardSkillsFound.slice(0, 12).map((s, i) => (
+                {(result?.hardSkillsFound || []).slice(0, 12).map((s, i) => (
                   <span key={i} className="px-2.5 py-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-lg border border-emerald-100">{s}</span>
                 ))}
               </div>
@@ -157,7 +158,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onEdit, onOpenMatc
             <div className="pt-6 border-t border-slate-50">
               <p className="text-[10px] font-black text-indigo-500 uppercase mb-3 tracking-tighter">ننصح بإضافتها (لزيادة الدرجة)</p>
               <div className="flex flex-wrap gap-1.5">
-                {result.missingHardSkills.map((s, i) => (
+                {(result?.missingHardSkills || []).map((s, i) => (
                   <span key={i} className="px-2.5 py-1 bg-indigo-50 text-indigo-700 text-[10px] font-bold rounded-lg border border-indigo-100">{s}</span>
                 ))}
               </div>
@@ -165,7 +166,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onEdit, onOpenMatc
           </div>
         </div>
 
-        {/* Protocol 2: Metrics */}
+        {/* Metrics */}
         <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col">
           <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
             <Activity size={16} /> التدقيق الرقمي
@@ -189,28 +190,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onEdit, onOpenMatc
               </div>
             </div>
             <div className="w-full space-y-3">
-              <MetricItem label="نقاط الوصف" value={result.metrics.totalBulletPoints} />
-              <MetricItem label="جمل قوية (بأرقام)" value={result.metrics.bulletsWithMetrics} color="text-emerald-600" />
-              <MetricItem label="أفعال ضعيفة" value={result.metrics.weakVerbsCount} color="text-rose-600" />
+              <MetricItem label="نقاط الوصف" value={metrics?.totalBulletPoints || 0} />
+              <MetricItem label="جمل قوية (بأرقام)" value={metrics?.bulletsWithMetrics || 0} color="text-emerald-600" />
+              <MetricItem label="أفعال ضعيفة" value={metrics?.weakVerbsCount || 0} color="text-rose-600" />
             </div>
           </div>
         </div>
 
-        {/* Protocol 3: Compliance */}
+        {/* Compliance */}
         <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col">
           <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
             <ShieldAlert size={16} /> معوقات الـ ATS
           </h3>
           <div className="space-y-4 flex-1">
-            {result.criticalErrors.length > 0 || result.formattingIssues.length > 0 ? (
+            {(result?.criticalErrors?.length > 0 || result?.formattingIssues?.length > 0) ? (
               <>
-                {result.criticalErrors.map((err, i) => (
+                {(result.criticalErrors || []).map((err, i) => (
                   <div key={i} className="flex items-start gap-3 p-4 bg-rose-50 rounded-2xl border border-rose-100">
                     <AlertOctagon className="text-rose-600 shrink-0 mt-0.5" size={16} />
                     <p className="text-xs font-bold text-rose-900 leading-snug">{err}</p>
                   </div>
                 ))}
-                {result.formattingIssues.map((issue, i) => (
+                {(result.formattingIssues || []).map((issue, i) => (
                   <div key={i} className="flex items-start gap-3 p-4 bg-amber-50 rounded-2xl border border-amber-100">
                     <Zap className="text-amber-600 shrink-0 mt-0.5" size={16} />
                     <p className="text-xs font-bold text-amber-900 leading-snug">{issue}</p>

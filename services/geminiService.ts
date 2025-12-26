@@ -3,11 +3,18 @@ import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { AnalysisResult, JobMatchResult, ResumeSection, ImprovedContent } from "../types";
 
 export class GeminiService {
-  private getClient() {
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) {
+  private getApiKey(): string {
+    // محاولة جلب المفتاح من عدة مصادر محتملة في Vercel
+    const key = process.env.API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY;
+    if (!key) {
+      console.error("API Key is missing in environment variables.");
       throw new Error("API Key is missing. Please check your configuration.");
     }
+    return key;
+  }
+
+  private getClient() {
+    const apiKey = this.getApiKey();
     return new GoogleGenAI({ apiKey });
   }
 

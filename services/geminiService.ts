@@ -4,12 +4,10 @@ import { AnalysisResult, JobMatchResult, ResumeSection, ImprovedContent } from "
 
 export class GeminiService {
   private getClient() {
-    // Vite config should have defined process.env.API_KEY
     const apiKey = (process.env as any).API_KEY;
     
-    if (!apiKey) {
-      console.error("CRITICAL: API_KEY is missing. Ensure it is set in Vercel Environment Variables.");
-      throw new Error("مفتاح تشغيل الذكاء الاصطناعي مفقود. يرجى مراجعة إعدادات الخادم.");
+    if (!apiKey || apiKey.includes("---")) {
+      throw new Error("مفتاح الـ API غير صالح أو لم يتم ضبطه في Vercel.");
     }
     
     return new GoogleGenAI({ apiKey });
@@ -51,7 +49,7 @@ export class GeminiService {
 
     try {
       const response: GenerateContentResponse = await ai.models.generateContent({
-        model: 'gemini-2.0-flash-lite',
+        model: 'gemini-3-flash-preview',
         contents: [{ role: 'user', parts: [{ text: `${systemInstruction}\n\nRESUME CONTENT TO PARSE:\n${text}` }] }],
         config: {
           responseMimeType: "application/json",
@@ -94,7 +92,7 @@ export class GeminiService {
       });
 
       const textOutput = response.text;
-      if (!textOutput) throw new Error("Empty response from AI");
+      if (!textOutput) throw new Error("لم يصل رد من الذكاء الاصطناعي.");
       
       const data = JSON.parse(textOutput);
       
@@ -120,8 +118,11 @@ export class GeminiService {
       sanitized.overallScore = this.calculateATSScore(sanitized);
       return sanitized;
     } catch (error: any) {
-      console.error("Gemini Analysis Error Detail:", error);
-      throw new Error(`تعذر تحليل السيرة الذاتية: ${error.message || "خطأ غير معروف"}`);
+      console.error("Gemini Error:", error);
+      if (error.message?.includes("leaked")) {
+        throw new Error("مفتاح الـ API الخاص بك تم إيقافه من جوجل لأنه 'مسرب'. يرجى إنشاء مفتاح جديد ووضعه في إعدادات Vercel.");
+      }
+      throw new Error(`تعذر تحليل السيرة الذاتية: ${error.message || "خطأ في الاتصال بالخادم"}`);
     }
   }
 
@@ -131,15 +132,14 @@ export class GeminiService {
       TASK: REWRITE EVERY SECTION FOR ATS SUCCESS.
       RULES:
       1. Keep all facts, names, and dates.
-      2. Use strong action verbs (Led, Developed, Optimized).
+      2. Use strong action verbs.
       3. Use clean HTML <ul><li> formatting.
-      4. DO NOT DELETE ANY INFORMATION.
     `;
 
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash-lite',
-        contents: [{ role: 'user', parts: [{ text: `${prompt}\n\nSections JSON: ${JSON.stringify(sections.map(s => ({ id: s.id, content: s.content })))}` }] }],
+        model: 'gemini-3-flash-preview',
+        contents: [{ role: 'user', parts: [{ text: `${prompt}\n\nSections: ${JSON.stringify(sections.map(s => ({ id: s.id, content: s.content })))}` }] }],
         config: { 
           responseMimeType: "application/json",
           responseSchema: {
@@ -163,19 +163,16 @@ export class GeminiService {
       });
       return mapping;
     } catch (error) {
-      console.error("Bulk Improvement Error:", error);
-      throw new Error("فشل التحسين التلقائي. يرجى المحاولة لاحقاً.");
+      throw new Error("فشل التحسين التلقائي. يرجى مراجعة مفتاح الـ API.");
     }
   }
 
   async improveSection(title: string, content: string): Promise<ImprovedContent> {
     const ai = this.getClient();
-    const prompt = `Improve "${title}" for ATS. Return JSON with 'professional' and 'atsOptimized'. Content: ${content}`;
-
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash-lite',
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        model: 'gemini-3-flash-preview',
+        contents: [{ role: 'user', parts: [{ text: `Improve "${title}" for ATS: ${content}` }] }],
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -190,19 +187,16 @@ export class GeminiService {
       });
       return JSON.parse(response.text || "{}");
     } catch (error) {
-      console.error("Section Improvement Error:", error);
-      throw error;
+      throw new Error("فشل تحسين القسم.");
     }
   }
 
   async matchJobDescription(resumeText: string, sections: ResumeSection[], jobDescription: string): Promise<JobMatchResult> {
     const ai = this.getClient();
-    const prompt = `Tailor resume to JD. Resume: ${resumeText}\n\nJD: ${jobDescription}`;
-
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash-lite',
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        model: 'gemini-3-pro-preview',
+        contents: [{ role: 'user', parts: [{ text: `Tailor resume to JD: ${jobDescription}\n\nResume: ${resumeText}` }] }],
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -231,8 +225,7 @@ export class GeminiService {
       });
       return JSON.parse(response.text || "{}");
     } catch (error) {
-      console.error("JD Match Error:", error);
-      throw error;
+      throw new Error("فشل مطابقة الوظيفة.");
     }
   }
 }

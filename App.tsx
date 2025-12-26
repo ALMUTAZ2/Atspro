@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { FileUploader } from './components/FileUploader';
 import { Dashboard } from './components/Dashboard';
@@ -6,7 +7,7 @@ import { JobMatchModal } from './components/JobMatchModal';
 import { AppStep, AnalysisResult, ResumeSection } from './types';
 import { GeminiService } from './services/geminiService';
 import { DocumentService } from './services/documentService';
-import { Cpu, Sparkles, ShieldCheck, RefreshCcw } from 'lucide-react';
+import { Cpu, Sparkles, ShieldCheck, RefreshCcw, AlertTriangle } from 'lucide-react';
 
 const STORAGE_KEYS = {
   STEP: 'ats_app_step',
@@ -34,6 +35,7 @@ const App: React.FC = () => {
 
   const [loading, setLoading] = useState(false);
   const [showMatchModal, setShowMatchModal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.STEP, step);
@@ -43,11 +45,12 @@ const App: React.FC = () => {
   }, [step, resumeText, analysis, sections]);
 
   const handleReset = useCallback(() => {
-    if (window.confirm("العودة لشاشة الرفع للبدء بفحص جديد؟ (سيتم حفظ النتيجة الحالية في السجل)")) {
+    if (window.confirm("العودة لشاشة الرفع للبدء بفحص جديد؟")) {
       setStep(AppStep.UPLOAD);
       setAnalysis(null);
       setSections([]);
       setResumeText('');
+      setErrorMessage(null);
       localStorage.removeItem(STORAGE_KEYS.STEP);
       localStorage.removeItem(STORAGE_KEYS.ANALYSIS);
       localStorage.removeItem(STORAGE_KEYS.SECTIONS);
@@ -58,6 +61,7 @@ const App: React.FC = () => {
 
   const handleUpload = async (file: File) => {
     setLoading(true);
+    setErrorMessage(null);
     try {
       const text = await DocumentService.extractText(file);
       if (!text || text.length < 50) throw new Error("تعذر استخراج نص كافٍ من الملف.");
@@ -66,23 +70,11 @@ const App: React.FC = () => {
       const gemini = new GeminiService();
       const result = await gemini.analyzeResume(text);
       
-      const newHistoryEntry = {
-        id: Date.now(),
-        fileName: file.name,
-        date: new Date().toLocaleDateString('ar-SA'),
-        time: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
-        score: result.overallScore || 0
-      };
-      const existingHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.HISTORY) || '[]');
-      const updatedHistory = [newHistoryEntry, ...existingHistory].slice(0, 5);
-      localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(updatedHistory));
-
       setAnalysis(result);
       setSections(result.structuredSections);
       setStep(AppStep.DASHBOARD);
     } catch (err: any) { 
-      console.error("Analysis Error:", err);
-      alert(err.message || "حدث خطأ غير متوقع. يرجى المحاولة مجدداً.");
+      setErrorMessage(err.message || "حدث خطأ غير متوقع.");
     } finally {
       setLoading(false);
     }
@@ -108,6 +100,19 @@ const App: React.FC = () => {
       </nav>
 
       <main className="flex-1 max-w-7xl mx-auto px-6 w-full py-10">
+        {errorMessage && (
+          <div className="mb-8 p-6 bg-rose-50 border-2 border-rose-100 rounded-[2rem] flex items-center gap-4 animate-in slide-in-from-top-4 duration-300">
+            <div className="w-12 h-12 bg-rose-100 rounded-full flex items-center justify-center text-rose-600 shrink-0">
+              <AlertTriangle size={24} />
+            </div>
+            <div>
+              <h3 className="font-black text-rose-900">حدث خطأ في النظام</h3>
+              <p className="text-sm text-rose-700 font-medium">{errorMessage}</p>
+            </div>
+            <button onClick={() => setErrorMessage(null)} className="mr-auto text-rose-400 hover:text-rose-600 font-bold">إغلاق</button>
+          </div>
+        )}
+
         {loading ? (
           <div className="h-[70vh] flex flex-col items-center justify-center text-center animate-in fade-in duration-500">
             <div className="relative mb-8">

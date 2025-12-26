@@ -49,7 +49,7 @@ export class GeminiService {
 
     try {
       const response: GenerateContentResponse = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-2.0-flash-lite',
         contents: [{ role: 'user', parts: [{ text: `${systemInstruction}\n\nRESUME CONTENT TO PARSE:\n${text}` }] }],
         config: {
           responseMimeType: "application/json",
@@ -138,7 +138,7 @@ export class GeminiService {
 
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+          model: 'gemini-2.0-flash-lite',
         contents: [{ role: 'user', parts: [{ text: `${prompt}\n\nSections: ${JSON.stringify(sections.map(s => ({ id: s.id, content: s.content })))}` }] }],
         config: { 
           responseMimeType: "application/json",
@@ -171,7 +171,7 @@ export class GeminiService {
     const ai = this.getClient();
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+         model: 'gemini-2.0-flash-lite',
         contents: [{ role: 'user', parts: [{ text: `Improve "${title}" for ATS: ${content}` }] }],
         config: {
           responseMimeType: "application/json",
@@ -195,7 +195,7 @@ export class GeminiService {
     const ai = this.getClient();
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
+          model: 'gemini-2.0-flash-lite',
         contents: [{ role: 'user', parts: [{ text: `Tailor resume to JD: ${jobDescription}\n\nResume: ${resumeText}` }] }],
         config: {
           responseMimeType: "application/json",

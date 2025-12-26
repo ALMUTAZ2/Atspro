@@ -7,56 +7,82 @@ import { JobMatchModal } from './components/JobMatchModal';
 import { AppStep, AnalysisResult, ResumeSection } from './types';
 import { GeminiService } from './services/geminiService';
 import { DocumentService } from './services/documentService';
-import { Cpu, Sparkles, Key, ShieldCheck, RefreshCcw } from 'lucide-react';
+import { Cpu, Github, Sparkles, Key, ShieldCheck, RefreshCcw } from 'lucide-react';
 
 const STORAGE_KEYS = {
-  STEP: 'ats_v4_step',
-  RESUME: 'ats_v4_resume',
-  ANALYSIS: 'ats_v4_analysis',
-  SECTIONS: 'ats_v4_sections'
+  STEP: 'ats_app_step',
+  RESUME_TEXT: 'ats_resume_text',
+  ANALYSIS: 'ats_analysis',
+  SECTIONS: 'ats_sections'
 };
 
 const App: React.FC = () => {
-  const [step, setStep] = useState<AppStep>(() => (localStorage.getItem(STORAGE_KEYS.STEP) as AppStep) || AppStep.UPLOAD);
-  const [resumeText, setResumeText] = useState(() => localStorage.getItem(STORAGE_KEYS.RESUME) || '');
+  const [step, setStep] = useState<AppStep>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.STEP);
+      return (saved as AppStep) || AppStep.UPLOAD;
+    } catch { return AppStep.UPLOAD; }
+  });
+  
+  const [resumeText, setResumeText] = useState(() => localStorage.getItem(STORAGE_KEYS.RESUME_TEXT) || '');
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.ANALYSIS);
-    return saved ? JSON.parse(saved) : null;
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.ANALYSIS);
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
   });
   const [sections, setSections] = useState<ResumeSection[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.SECTIONS);
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.SECTIONS);
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
   });
 
-  const [loading, setLoading] = useState(false);
   const [showMatchModal, setShowMatchModal] = useState(false);
-  const [apiKeyReady, setApiKeyReady] = useState(false);
-
-  useEffect(() => {
-    const checkKey = async () => {
-      if (window.aistudio) {
-        const has = await window.aistudio.hasSelectedApiKey();
-        setApiKeyReady(has);
-      } else { setApiKeyReady(true); }
-    };
-    checkKey();
-  }, []);
+  const [loading, setLoading] = useState(false);
+  const [apiKeySelected, setApiKeySelected] = useState<boolean | null>(null);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.STEP, step);
-    localStorage.setItem(STORAGE_KEYS.RESUME, resumeText);
+    localStorage.setItem(STORAGE_KEYS.RESUME_TEXT, resumeText);
     if (analysis) localStorage.setItem(STORAGE_KEYS.ANALYSIS, JSON.stringify(analysis));
-    if (sections.length) localStorage.setItem(STORAGE_KEYS.SECTIONS, JSON.stringify(sections));
+    else localStorage.removeItem(STORAGE_KEYS.ANALYSIS);
+    if (sections.length > 0) localStorage.setItem(STORAGE_KEYS.SECTIONS, JSON.stringify(sections));
+    else localStorage.removeItem(STORAGE_KEYS.SECTIONS);
   }, [step, resumeText, analysis, sections]);
 
+  useEffect(() => {
+    const checkApiKey = async () => {
+      if (window.aistudio) {
+        const hasKey = await window.aistudio.hasSelectedApiKey();
+        setApiKeySelected(hasKey);
+      } else { setApiKeySelected(true); }
+    };
+    checkApiKey();
+  }, []);
+
+  const handleOpenKeySelector = async () => {
+    if (window.aistudio) {
+      await window.aistudio.openSelectKey();
+      setApiKeySelected(true);
+    }
+  };
+
   const handleReset = useCallback(() => {
-    if (confirm("هل تريد مسح البيانات الحالية والبدء بفحص ملف جديد؟")) {
+    if (window.confirm("هل أنت متأكد من البدء بفحص جديد؟ سيتم مسح كافة البيانات الحالية.")) {
+      // 1. Clear State Immediately
       setStep(AppStep.UPLOAD);
-      setResumeText('');
       setAnalysis(null);
       setSections([]);
-      localStorage.clear();
-      window.scrollTo(0, 0);
+      setResumeText('');
+      setShowMatchModal(false);
+      setLoading(false);
+
+      // 2. Clear Storage
+      Object.values(STORAGE_KEYS).forEach(k => localStorage.removeItem(k));
+      
+      // 3. UI Actions
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }, []);
 
@@ -65,71 +91,89 @@ const App: React.FC = () => {
     try {
       const text = await DocumentService.extractText(file);
       setResumeText(text);
+      
       const gemini = new GeminiService();
       const result = await gemini.analyzeResume(text);
+      
       setAnalysis(result);
-      setSections(result.structuredSections || []);
+      setSections(result.structuredSections);
       setStep(AppStep.DASHBOARD);
     } catch (err: any) {
-      alert("حدث خطأ في التحليل: " + (err.message || "يرجى المحاولة لاحقاً."));
+      console.error("Critical error:", err);
+      if (err.message?.includes("429") || err.message?.includes("Quota")) {
+        alert('لقد نفدت حصة الاستخدام (Quota). يرجى المحاولة لاحقاً أو تغيير مفتاح الـ API.');
+      } else {
+        alert('فشل المحرك في تحليل الملف. تأكد من أن الملف نصي ومفتاح الـ API صحيح.');
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleApplyTailoring = (tailored: ResumeSection[]) => {
-    setSections(tailored);
+  const handleApplyTailoring = (tailoredSections: ResumeSection[]) => {
+    setSections(tailoredSections);
     setStep(AppStep.EDITOR);
   };
 
-  if (!apiKeyReady) {
+  if (apiKeySelected === false) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 text-center">
-        <div className="bg-white rounded-[3rem] p-12 max-w-md w-full shadow-2xl">
-          <Key className="w-16 h-16 text-indigo-600 mx-auto mb-6" />
-          <h2 className="text-2xl font-black mb-4">مفتاح API مطلوب</h2>
-          <button onClick={() => window.aistudio?.openSelectKey().then(() => window.location.reload())} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black">إعداد المفتاح</button>
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 text-center font-sans">
+        <div className="max-w-md w-full bg-white rounded-[3rem] p-12 shadow-2xl">
+          <div className="w-20 h-20 bg-indigo-100 rounded-3xl flex items-center justify-center text-indigo-600 mx-auto mb-8 animate-bounce">
+            <Key size={40} />
+          </div>
+          <h1 className="text-3xl font-black text-slate-900 mb-4 tracking-tight">API Key Required</h1>
+          <p className="text-slate-500 mb-8 leading-relaxed">يرجى اختيار مفتاح API نشط لتتمكن من استخدام ميزات الفحص والتحسين المتقدمة.</p>
+          <button onClick={handleOpenKeySelector} className="w-full py-5 bg-indigo-600 text-white rounded-[1.5rem] font-black hover:bg-indigo-700 transition-all shadow-xl active:scale-95">Select API Key</button>
         </div>
       </div>
     );
   }
 
+  const isAtStart = step === AppStep.UPLOAD && resumeText === '';
+
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
-      <nav className="h-16 border-b bg-white/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 h-full flex items-center justify-between">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => step !== AppStep.UPLOAD && handleReset()}>
-            <ShieldCheck className="text-indigo-600" size={32} />
-            <span className="text-xl font-black uppercase">Prophet<span className="text-indigo-600">V4</span></span>
+    <div className="min-h-screen flex flex-col selection:bg-indigo-100 selection:text-indigo-900 font-sans">
+      <nav className="border-b bg-white/80 backdrop-blur-xl sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => !isAtStart && handleReset()}>
+            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-xl">
+              <ShieldCheck size={22} />
+            </div>
+            <span className="text-xl font-black tracking-tight text-slate-900">PROPHET<span className="text-indigo-600">V4.5</span></span>
           </div>
           <div className="flex items-center gap-4">
-            {step !== AppStep.UPLOAD && (
-              <button onClick={handleReset} className="flex items-center gap-2 px-4 py-2 text-xs font-black text-rose-600 hover:bg-rose-50 rounded-xl transition-all">
-                <RefreshCcw size={14} /> Scan New File
+            {!isAtStart && (
+              <button onClick={handleReset} className="flex items-center gap-2 px-4 py-2 text-sm font-black text-rose-500 hover:bg-rose-50 rounded-xl transition-all">
+                <RefreshCcw size={16} /> Scan New
               </button>
             )}
-            <button onClick={() => window.aistudio?.openSelectKey()}><Key size={20} className="text-slate-400" /></button>
+            <button onClick={handleOpenKeySelector} className="p-2 text-slate-400 hover:text-indigo-600 transition-colors rounded-lg"><Key size={18} /></button>
           </div>
         </div>
       </nav>
 
-      <main className="max-w-7xl mx-auto px-6 py-10">
+      <main className="flex-1 max-w-7xl mx-auto px-6 w-full py-10">
         {loading ? (
-          <div className="h-[60vh] flex flex-col items-center justify-center text-center animate-pulse">
-            <Cpu className="w-16 h-16 text-indigo-600 mb-6 animate-spin" />
-            <h2 className="text-3xl font-black mb-2">جارٍ التدقيق الجنائي للبيانات...</h2>
-            <p className="text-slate-500 font-medium">نستخدم محرك Gemini-3 لضمان أعلى دقة</p>
+          <div className="h-[70vh] flex flex-col items-center justify-center text-center animate-in fade-in duration-500">
+            <div className="relative mb-8">
+              <div className="w-24 h-24 border-4 border-slate-100 rounded-full animate-pulse"></div>
+              <div className="w-24 h-24 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin absolute top-0 left-0"></div>
+              <Cpu className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-indigo-600" size={32} />
+            </div>
+            <h2 className="text-3xl font-black text-slate-900 mb-3 tracking-tight">تحليل مكثف للبيانات...</h2>
+            <p className="text-slate-500 max-w-sm mx-auto leading-relaxed font-mono text-xs opacity-60">Scanning with Flash Engine V4.5</p>
           </div>
         ) : (
           <>
             {step === AppStep.UPLOAD && (
-              <div className="space-y-12 animate-in fade-in duration-700 pt-10 text-center">
-                <div className="max-w-2xl mx-auto">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-[10px] font-black uppercase mb-6 tracking-widest">
-                    <Sparkles size={12} /> AI Kernel V4.5 Active
+              <div className="space-y-12 animate-in fade-in zoom-in-95 duration-700">
+                <div className="text-center max-w-2xl mx-auto pt-10">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-[10px] font-black uppercase mb-6 border border-indigo-100">
+                    <Sparkles size={12} /> Forensic Intelligence Kernel V4.5
                   </div>
-                  <h1 className="text-5xl font-black mb-6 leading-tight">حلل سيرتك باحترافية <span className="text-indigo-600">الذكاء الاصطناعي</span></h1>
-                  <p className="text-lg text-slate-500 font-medium">افحص سيرتك الذاتية مقابل أنظمة الـ ATS الأكثر تعقيداً في العالم.</p>
+                  <h1 className="text-6xl font-black text-slate-900 mb-6 leading-[1.1] tracking-tight">تخطَّ حواجز الـ <span className="text-indigo-600">Bots</span></h1>
+                  <p className="text-xl text-slate-500 leading-relaxed font-medium">نظام PROPHET يفكك سيرتك الذاتية ويعيد صياغتها لتجتاز أنظمة الفرز (ATS) بأعلى الدرجات.</p>
                 </div>
                 <FileUploader onUpload={handleUpload} />
               </div>

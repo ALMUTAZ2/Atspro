@@ -1,3 +1,4 @@
+
 {
   "name": "ats-master",
   "private": true,
@@ -10,7 +11,7 @@
   },
   "dependencies": {
     "@google/genai": "latest",
-    "pdfjs-dist": "4.0.379",
+    "pdfjs-dist": "5.4.449",
     "docx": "^9.5.1",
     "file-saver": "^2.0.5",
     "jspdf": "^2.5.1",
@@ -25,6 +26,7 @@
     "@types/node": "^20.11.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/file-saver": "^2.0.7",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.47",

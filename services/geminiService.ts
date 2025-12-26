@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { AnalysisResult, JobMatchResult, ResumeSection, ImprovedContent } from "../types";
 

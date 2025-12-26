@@ -43,7 +43,7 @@ export class ExportService {
               return new Paragraph({
                 children: [new TextRun({ text: line, size: 22 })],
                 spacing: { after: 80 },
-                alignment: AlignmentType.JUSTIFY
+                alignment: AlignmentType.JUSTIFIED
               });
             }),
           ]),
